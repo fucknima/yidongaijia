@@ -45,21 +45,21 @@ private struct LoginView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("鐖卞鐩磋繛")
+                        Text("爱家直连")
                             .font(.largeTitle.weight(.bold))
-                        Text("鐧诲綍鍚庣洿鎺ユ煡鐪嬫憚鍍忓ご锛岃棰戝湪鏈満瑙ｇ爜銆?)
+                        Text("登录后直接查看摄像头，视频在本机解码。")
                             .foregroundStyle(.secondary)
                     }
 
                     GroupBox {
                         VStack(spacing: 14) {
-                            TextField("绉诲姩鎵嬫満鍙?, text: $model.phone)
+                            TextField("移动手机号", text: $model.phone)
                                 .textContentType(.telephoneNumber)
                                 .keyboardType(.phonePad)
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .phone)
 
-                            Picker("鐧诲綍鏂瑰紡", selection: $model.loginMethod) {
+                            Picker("登录方式", selection: $model.loginMethod) {
                                 ForEach(AijiaLoginMethod.allCases) { method in
                                     Text(method.title).tag(method)
                                 }
@@ -67,13 +67,13 @@ private struct LoginView: View {
                             .pickerStyle(.segmented)
 
                             if model.loginMethod == .password {
-                                SecureField("绉诲姩鐖卞瀵嗙爜", text: $model.password)
+                                SecureField("移动爱家密码", text: $model.password)
                                     .textContentType(.password)
                                     .textFieldStyle(.roundedBorder)
                                     .focused($focusedField, equals: .password)
                             } else {
                                 HStack(spacing: 8) {
-                                    TextField("鐭俊楠岃瘉鐮?, text: $model.verificationCode)
+                                    TextField("短信验证码", text: $model.verificationCode)
                                         .textContentType(.oneTimeCode)
                                         .keyboardType(.numberPad)
                                         .textFieldStyle(.roundedBorder)
@@ -85,10 +85,10 @@ private struct LoginView: View {
                                     } label: {
                                         Text(
                                             model.isSendingVerificationCode
-                                                ? "鍙戦€佷腑鈥?
+                                                ? "发送中…"
                                                 : model.verificationCountdown > 0
                                                     ? "\(model.verificationCountdown)s"
-                                                    : "鑾峰彇楠岃瘉鐮?
+                                                    : "获取验证码"
                                         )
                                         .frame(minWidth: 82)
                                     }
@@ -101,15 +101,15 @@ private struct LoginView: View {
                                 }
                             }
 
-                            TextField("mac_id 鎴栨憚鍍忓ご鍚嶇О锛堝彲閫夛級", text: $model.cameraSelector)
+                            TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .camera)
 
                             if model.loginMethod == .password {
-                                Toggle("璁颁綇鐧诲綍淇℃伅", isOn: $model.rememberLogin)
+                                Toggle("记住登录信息", isOn: $model.rememberLogin)
                                     .font(.subheadline)
                             } else {
-                                Text("鐭俊楠岃瘉鐮佷粎鐢ㄤ簬鏈鐧诲綍锛屼笉浼氫繚瀛樸€?)
+                                Text("短信验证码仅用于本次登录，不会保存。")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -125,10 +125,10 @@ private struct LoginView: View {
                                     }
                                     Text(
                                         model.isLoading
-                                            ? "姝ｅ湪鐧诲綍鈥?
+                                            ? "正在登录…"
                                             : model.loginMethod == .password
-                                                ? "鐧诲綍骞舵挱鏀?
-                                                : "楠岃瘉鐮佺櫥褰曞苟鎾斁"
+                                                ? "登录并播放"
+                                                : "验证码登录并播放"
                                     )
                                 }
                                 .frame(maxWidth: .infinity)
@@ -150,31 +150,31 @@ private struct LoginView: View {
 
                     Text(
                         model.loginMethod == .password
-                            ? "瀵嗙爜鍙繚瀛樺湪鏈満閽ュ寵涓诧紝涓嶄細涓婁紶鍒板叾浠栨湇鍔″櫒銆?
-                            : "楠岃瘉鐮佺櫥褰曚娇鐢ㄥ畼鏂圭煭淇￠獙璇佹湇鍔★紝楠岃瘉鐮佷笉浼氬啓鍏ユ棩蹇楁垨淇濆瓨鍦ㄦ湰鏈恒€?
+                            ? "密码只保存在本机钥匙串，不会上传到其他服务器。"
+                            : "验证码登录使用官方短信验证服务，验证码不会写入日志或保存在本机。"
                     )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 .padding()
             }
-            .navigationTitle("鐧诲綍")
+            .navigationTitle("登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink(destination: DiagnosticsView(model: model)) {
                         Image(systemName: "doc.text.magnifyingglass")
                     }
-                    .accessibilityLabel("璇婃柇鏃ュ織")
+                    .accessibilityLabel("诊断日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink(destination: UpdateLogView()) {
                         Image(systemName: "list.bullet.rectangle")
                     }
-                    .accessibilityLabel("鏇存柊鏃ュ織")
+                    .accessibilityLabel("更新日志")
                 }
                 ToolbarItem(placement: .keyboard) {
-                    Button("瀹屾垚") {
+                    Button("完成") {
                         focusedField = nil
                     }
                 }
@@ -194,9 +194,9 @@ private struct PlayerScreen: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.cameraName.isEmpty ? "鎴戠殑鎽勫儚澶? : model.cameraName)
+                            Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
                                 .font(.title2.weight(.semibold))
-                            Text(model.isLoading ? "姝ｅ湪杩炴帴浜戠鈥? : "绉诲姩鐖卞鎽勫儚澶?)
+                            Text(model.isLoading ? "正在连接云端…" : "移动爱家摄像头")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -218,7 +218,7 @@ private struct PlayerScreen: View {
                         Button(role: .destructive) {
                             model.stop()
                         } label: {
-                            Label(model.isReplay ? "鍋滄鍥炴斁" : "鍋滄鎾斁", systemImage: "stop.fill")
+                            Label(model.isReplay ? "停止回放" : "停止播放", systemImage: "stop.fill")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -227,11 +227,11 @@ private struct PlayerScreen: View {
                             Image(systemName: model.hasError ? "wifi.exclamationmark" : "video")
                                 .font(.system(size: 42))
                                 .foregroundStyle(model.hasError ? .red : .secondary)
-                            Text(model.isLoading ? "姝ｅ湪鑾峰彇瑙嗛鍦板潃" : "鏆傛椂娌℃湁鎾斁鐢婚潰")
+                            Text(model.isLoading ? "正在获取视频地址" : "暂时没有播放画面")
                                 .foregroundStyle(.secondary)
 
                             if !model.isLoading {
-                                Button("閲嶆柊杩炴帴") {
+                                Button("重新连接") {
                                     model.start()
                                 }
                                 .buttonStyle(.borderedProminent)
@@ -252,7 +252,7 @@ private struct PlayerScreen: View {
                             destination: HistoryView(model: model),
                             isActive: $showingHistory
                         ) {
-                            Label("鍐呭瓨鍗″洖鏀?, systemImage: "clock.arrow.circlepath")
+                            Label("内存卡回放", systemImage: "clock.arrow.circlepath")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.bordered)
@@ -260,7 +260,7 @@ private struct PlayerScreen: View {
                 }
                 .padding()
             }
-            .navigationTitle("鎾斁")
+            .navigationTitle("播放")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -269,26 +269,26 @@ private struct PlayerScreen: View {
                     } label: {
                         Image(systemName: "doc.text.magnifyingglass")
                     }
-                    .accessibilityLabel("璇婃柇鏃ュ織")
+                    .accessibilityLabel("诊断日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink(destination: UpdateLogView()) {
                         Image(systemName: "list.bullet.rectangle")
                     }
-                    .accessibilityLabel("鏇存柊鏃ュ織")
+                    .accessibilityLabel("更新日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Text("鐗堟湰 \(AppVersionInfo.display)")
+                        Text("版本 \(AppVersionInfo.display)")
                         Button(role: .destructive) {
                             model.logout()
                         } label: {
-                            Label("閫€鍑哄苟杩斿洖鐧诲綍", systemImage: "rectangle.portrait.and.arrow.right")
+                            Label("退出并返回登录", systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("鏇村鎿嶄綔")
+                    .accessibilityLabel("更多操作")
                 }
             }
         }
@@ -322,113 +322,179 @@ private struct ReleaseNote: Identifiable {
 
 private enum AppVersionInfo {
     static var display: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "鏈煡"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "鏈煡"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
     }
 }
 
 private enum ReleaseNotesCatalog {
     static let all: [ReleaseNote] = [
         ReleaseNote(
-            version: "楠岃瘉鐮佺櫥褰曚慨澶?,
+            version: "验证码登录修复",
             date: "2026-08-02",
-            title: "鐭俊楠岃瘉鐮佷細璇濇祦绋?,
+            title: "短信验证码会话流程",
             details: [
-                "鎸夊畼鏂规櫘閫氱櫥褰曟祦绋嬭皟鐢?authentication/sendMsg锛屽苟琛ラ綈鎵嬫満鍙枫€佽澶囧搧鐗屽拰鏈哄瀷瀛楁銆?,
-                "鎸夊畼鏂瑰疄鐜颁娇鐢?AES-128-ECB/PKCS7 鍔犲瘑鐭俊鐧诲綍鎵嬫満鍙枫€?,
-                "琛ラ綈 IDMP AppID銆乻ourceId銆佽澶囨爣璇嗐€佸湴鍖哄弬鏁板拰 UNIAUTH_PASSWORD 鐧诲綍瀛楁銆?,
-                "鍙戦€侀獙璇佺爜鍚庡鐢ㄥ悓涓€缃戠粶浼氳瘽鍜?Cookie 鐧诲綍锛岄伩鍏?session 鏍￠獙澶辫触銆?,
-                "楠岃瘉鐮佷笉浼氫繚瀛樺埌閽ュ寵涓诧紝涔熶笉浼氬啓鍏ヨ瘖鏂棩蹇椼€?
+                "改用官方安全平台验证码接口 user/login/getVerifyCodeApp。",
+                "补齐官方要求的手机号、设备品牌、监测设备标识和 TERMINAL_LOGIN 参数。",
+                "发送验证码后复用同一网络会话登录，避免 session 校验失败。",
+                "验证码不会保存到钥匙串，也不会写入诊断日志。"
             ]
         ),
         ReleaseNote(
-            version: "鍥炴斁璇婃柇淇",
+            version: "回放诊断修复",
             date: "2026-08-02",
-            title: "鍥炴斁璇婃柇闅旂涓庢煡璇㈠幓閲?,
+            title: "回放诊断隔离与查询去重",
             details: [
-                "璇婃柇鏃ュ織鏀逛负鐙珛寮圭獥锛屼笉鍐嶉€氳繃鍥炴斁瀵艰埅鏍堟帹鍏ラ〉闈€?,
-                "鎵撳紑銆佸埛鏂板拰鍏抽棴璇婃柇椤典笉浼氬仠姝㈡垨閲嶅缓褰撳墠鍥炴斁鎾斁鍣ㄣ€?,
-                "鍥炴斁鏈熼棿蹇界暐椤甸潰鐢熷懡鍛ㄦ湡瑙﹀彂鐨勮嚜鍔ㄥ巻鍙插綍鍍忔煡璇紝閬垮厤閲嶅璇锋眰鍜屾棩蹇楀埛灞忋€?,
-                "淇濈暀鎵嬪姩鏌ヨ鍘嗗彶褰曞儚鍔熻兘锛屽苟寤堕暱閲嶅鏌ヨ淇濇姢鏃堕棿銆?
+                "诊断日志改为独立弹窗，不再通过回放导航栈推入页面。",
+                "打开、刷新和关闭诊断页不会停止或重建当前回放播放器。",
+                "回放期间忽略页面生命周期触发的自动历史录像查询，避免重复请求和日志刷屏。",
+                "保留手动查询历史录像功能，并延长重复查询保护时间。"
             ]
         ),
         ReleaseNote(
             version: "1.1",
             date: "2026-08-02",
-            title: "鍥炴斁涓庤瘖鏂鑸慨澶?,
+            title: "回放与诊断导航修复",
             details: [
-                "淇鍐呭瓨鍗″洖鏀炬椂鎵撳紑璇婃柇椤典細璇仠姝㈠洖鏀惧苟杩斿洖鎾斁椤点€?,
-                "鍙湁鏄庣‘杩斿洖鎾斁椤垫垨鐐瑰嚮鍋滄鍥炴斁锛屾墠浼氱粨鏉熷洖鏀句細璇濄€?,
-                "淇鍥炴斁椤甸潰瀵艰埅杩囩▼涓殑鎾斁鍣ㄩ噴鏀鹃棶棰樸€?,
-                "淇閫€鍑虹櫥褰曞悗閲嶅惎 App 浠嶈嚜鍔ㄨ繘鍏ユ挱鏀鹃〉鐨勯棶棰樸€?,
-                "鏂板鐭俊楠岃瘉鐮佺櫥褰曪紝鏀寔鑾峰彇楠岃瘉鐮併€佸€掕鏃跺拰楠岃瘉鐮佺櫥褰曘€?,
-                "楠岃瘉鐮佷粎鐢ㄤ簬褰撳墠鐧诲綍锛屼笉浼氫繚瀛樻垨鍐欏叆璇婃柇鏃ュ織銆?,
-                "鏋勫缓鐗堟湰鏀逛负姣忔 GitHub Actions 鏋勫缓鑷姩閫掑 0.1銆?
+                "修复内存卡回放时打开诊断页会误停止回放并返回播放页。",
+                "只有明确返回播放页或点击停止回放，才会结束回放会话。",
+                "修复回放页面导航过程中的播放器释放问题。",
+                "修复退出登录后重启 App 仍自动进入播放页的问题。",
+                "新增短信验证码登录，支持获取验证码、倒计时和验证码登录。",
+                "验证码仅用于当前登录，不会保存或写入诊断日志。",
+                "构建版本改为每次 GitHub Actions 构建自动递增 0.1。"
             ]
         ),
         ReleaseNote(
-            version: "鍘嗗彶鏋勫缓 speedfix",
+            version: "历史构建 speedfix",
             date: "2026-08-02",
-            title: "鍥炴斁鍊嶉€熶笌鎾斁鍣ㄧ姸鎬佷慨澶?,
+            title: "回放倍速与播放器状态修复",
             details: [
-                "淇鍊嶉€熻缃鎾斁鍣ㄥ洖璋冭鐩栫殑闂銆?,
-                "鍥炴斁鍒囨崲銆佹嫋鍔ㄨ繘搴﹀拰鎾斁鍣ㄩ噸寤烘椂閲嶆柊搴旂敤鍊嶉€熴€?,
-                "闄嶄綆鎾斁鍣ㄨ鍥炬洿鏂板鍥炴斁杩涘害鐨勫共鎵般€?
+                "修复倍速设置被播放器回调覆盖的问题。",
+                "回放切换、拖动进度和播放器重建时重新应用倍速。",
+                "降低播放器视图更新对回放进度的干扰。"
             ]
         ),
         ReleaseNote(
-            version: "鍘嗗彶鏋勫缓 replaydiagfix",
+            version: "历史构建 replaydiagfix",
             date: "2026-08-02",
-            title: "鍥炴斁杩涘害涓庤瘖鏂ǔ瀹氭€т慨澶?,
+            title: "回放进度与诊断稳定性修复",
             details: [
-                "闄愬埗鍘嗗彶褰曞儚鏌ヨ閲嶅璇锋眰锛岄伩鍏嶈瘖鏂〉闈㈠嚭鐜板ぇ閲忔棩蹇椼€?,
-                "蹇界暐杩囨湡鎾斁鍣ㄥ拰鏃у洖鏀句换鍔＄殑杩涘害鍥炶皟銆?,
-                "淇鎷栧姩杩涘害鍚庢挱鏀惧櫒榛戝睆銆佸洖鏀剧姸鎬佷笉鍚屾鍜屼細璇濊繃鏈熼噸璇曢棶棰樸€?
+                "限制历史录像查询重复请求，避免诊断页面出现大量日志。",
+                "忽略过期播放器和旧回放任务的进度回调。",
+                "修复拖动进度后播放器黑屏、回放状态不同步和会话过期重试问题。"
             ]
         ),
         ReleaseNote(
-            version: "鍘嗗彶鏋勫缓 v23鈥搗24",
+            version: "历史构建 v23–v24",
             date: "2026-08-02",
-            title: "鍘嗗彶鍥炴斁浜や簰淇",
+            title: "历史回放交互修复",
             details: [
-                "鎸夊綍鍍忕墖娈佃捣鐐硅姹傚巻鍙插湴鍧€锛岄伩鍏嶇偣鍑诲綋澶╁洖鏀句粠閿欒鏃堕棿寮€濮嬨€?,
-                "澧炲姞鏈嶅姟鍣ㄥ洖鏀惧畾浣嶅拰鎷栧姩杩涘害鐨勬仮澶嶉€昏緫銆?,
-                "淇鍥炴斁缁撴潫鍒囧洖鐩存挱鍚庨〉闈㈢姸鎬佸悎骞躲€侀粦灞忓拰鏃犵敾闈㈡彁绀洪棶棰樸€?
+                "按录像片段起点请求历史地址，避免点击当天回放从错误时间开始。",
+                "增加服务器回放定位和拖动进度的恢复逻辑。",
+                "修复回放结束切回直播后页面状态合并、黑屏和无画面提示问题。"
             ]
         ),
         ReleaseNote(
-            version: "鍘嗗彶鏋勫缓 v21鈥搗22",
+            version: "历史构建 v21–v22",
             date: "2026-08-02",
-            title: "鏃ュ織銆佹枃浠惰闂笌鍓嶅悗鍙颁慨澶?,
+            title: "日志、文件访问与前后台修复",
             details: [
-                "鏀寔瀵煎嚭璇婃柇鏃ュ織锛屽苟鍏佽浠?iPhone 鏂囦欢 App 璁块棶銆?,
-                "淇鍥炴斁鍒囨崲鍚庡彴鍐嶅洖鏉ュ悗鍙墿澹伴煶鎴栬鍥句涪澶便€?,
-                "澧炲姞鍥炴斁鎾斁鍣ㄥ湪鍓嶅悗鍙板垏鎹㈡椂鐨勬仮澶嶅拰鏃у湴鍧€娓呯悊銆?
+                "支持导出诊断日志，并允许从 iPhone 文件 App 访问。",
+                "修复回放切换后台再回来后只剩声音或视图丢失。",
+                "增加回放播放器在前后台切换时的恢复和旧地址清理。"
             ]
         ),
         ReleaseNote(
-            version: "鍘嗗彶鏋勫缓 v19鈥搗20",
+            version: "历史构建 v19–v20",
             date: "2026-08-02",
-        …937 tokens truncated…ote(
-            version: "鍘嗗彶鏋勫缓 v3鈥搗4",
-            date: "2026-08-02",
-            title: "鐩磋繛鎾斁鍩虹鐗?,
+            title: "进度条与倍速播放",
             details: [
-                "鎵嬫満鐩存帴鐧诲綍绉诲姩鐖卞浜戠锛屼笉缁忚繃涓浆鏈嶅姟鍣ㄣ€?,
-                "鑾峰彇瀹炴椂鍦板潃骞跺湪 iPhone 鏈満鐢?MobileVLCKit 瑙ｇ爜鎾斁銆?,
-                "鏀寔璐﹀彿涓嬫憚鍍忓ご鍒楄〃鍜屽彲閫夋憚鍍忓ご鍚嶇О/mac_id銆?
+                "增加内存卡回放进度条和时间显示。",
+                "增加 0.5x、1x、2x、3x、5x 倍速播放。",
+                "拖动进度时使用云端回放定位，避免本地播放器时间与服务器录像不同步。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v16–v18",
+            date: "2026-08-02",
+            title: "构建工程与资源整理",
+            details: [
+                "整理 Xcode 工程、资源目录和 MobileVLCKit 构建所需文件。",
+                "修复源码压缩包目录层级，确保 GitHub Actions 能正确解包构建。",
+                "补齐深色/浅色 App 图标资源。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v10–v14",
+            date: "2026-08-02",
+            title: "登录、播放和页面结构完善",
+            details: [
+                "登录失败时返回登录界面，并保存账号密码输入内容。",
+                "将登录、播放、内存卡回放和诊断日志分成独立页面。",
+                "增加摄像头选择、登录状态恢复和播放器错误状态提示。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v8–v9",
+            date: "2026-08-02",
+            title: "界面与设备资源优化",
+            details: [
+                "更换爱家直连 App 图标，并加入浅色/深色图标适配。",
+                "优化播放页布局、摄像头状态显示和控制按钮。",
+                "增加本机解码播放器视图的挂载与释放处理。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v7",
+            date: "2026-08-02",
+            title: "前后台播放恢复",
+            details: [
+                "应用进入后台时暂停或释放不再可靠的播放状态。",
+                "回到前台时重新获取实时地址，避免从几分钟前的缓存位置继续播放。",
+                "增加播放保活和实时流恢复状态提示。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v6",
+            date: "2026-08-02",
+            title: "云台与内存卡回放",
+            details: [
+                "增加上下左右云台控制。",
+                "按日期获取内存卡录像列表并打开历史录像。",
+                "增加历史录像结束后恢复实时流的处理。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v5",
+            date: "2026-08-02",
+            title: "诊断日志",
+            details: [
+                "增加实时日志页面和日志导出。",
+                "记录登录、HTTP 请求、播放器状态、保活和错误信息。",
+                "对手机号、密码、令牌和签名地址进行脱敏。"
+            ]
+        ),
+        ReleaseNote(
+            version: "历史构建 v3–v4",
+            date: "2026-08-02",
+            title: "直连播放基础版",
+            details: [
+                "手机直接登录移动爱家云端，不经过中转服务器。",
+                "获取实时地址并在 iPhone 本机用 MobileVLCKit 解码播放。",
+                "支持账号下摄像头列表和可选摄像头名称/mac_id。"
             ]
         ),
         ReleaseNote(
             version: "1.0",
             date: "2026-08-02",
-            title: "棣栦釜鍙敤鐗堟湰",
+            title: "首个可用版本",
             details: [
-                "鏁村悎鐧诲綍銆佸疄鏃舵挱鏀俱€佷簯鍙般€佸唴瀛樺崱鍥炴斁鍜岃瘖鏂棩蹇楀姛鑳姐€?,
-                "瀵嗙爜淇濆瓨鍒?iOS 閽ュ寵涓诧紝璇婃柇鏃ュ織鏀寔鏂囦欢璁块棶銆?
+                "整合登录、实时播放、云台、内存卡回放和诊断日志功能。",
+                "密码保存到 iOS 钥匙串，诊断日志支持文件访问。"
             ]
         )
     ]
@@ -439,7 +505,7 @@ private struct UpdateLogView: View {
         List {
             Section {
                 HStack {
-                    Label("褰撳墠鐗堟湰", systemImage: "app.badge")
+                    Label("当前版本", systemImage: "app.badge")
                     Spacer()
                     Text("\(AppVersionInfo.display) (\(AppVersionInfo.build))")
                         .foregroundStyle(.secondary)
@@ -447,11 +513,11 @@ private struct UpdateLogView: View {
                 }
             }
 
-            Section("淇璁板綍") {
+            Section("修复记录") {
                 ForEach(ReleaseNotesCatalog.all) { note in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
-                            Text(note.version.hasPrefix("鍘嗗彶") ? note.version : "鐗堟湰 \(note.version)")
+                            Text(note.version.hasPrefix("历史") ? note.version : "版本 \(note.version)")
                                 .font(.headline)
                             Spacer()
                             Text(note.date)
@@ -472,7 +538,7 @@ private struct UpdateLogView: View {
                 }
             }
         }
-        .navigationTitle("鏇存柊鏃ュ織")
+        .navigationTitle("更新日志")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -512,7 +578,7 @@ private struct ReplayControls: View {
                 )
 
                 HStack {
-                    Label("鍐呭瓨鍗″洖鏀?, systemImage: "play.rectangle")
+                    Label("内存卡回放", systemImage: "play.rectangle")
                         .font(.subheadline)
                     Spacer()
                     Menu {
@@ -627,7 +693,7 @@ private struct PTZControlPanel: View {
     var body: some View {
         GroupBox {
             VStack(spacing: 10) {
-                Text("浜戝彴鎺у埗")
+                Text("云台控制")
                     .font(.headline)
 
                 PTZDirectionButton(direction: .up, model: model)
@@ -663,7 +729,7 @@ private struct PTZDirectionButton: View {
                 .frame(width: 58, height: 42)
         }
         .buttonStyle(.bordered)
-        .accessibilityLabel("浜戝彴\(direction.title)")
+        .accessibilityLabel("云台\(direction.title)")
     }
 }
 
@@ -679,7 +745,7 @@ private struct HistoryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
-                        DatePicker("鏃ユ湡", selection: $selectedDate, displayedComponents: .date)
+                        DatePicker("日期", selection: $selectedDate, displayedComponents: .date)
 
                         Button {
                             model.loadRecordings(for: selectedDate, force: true)
@@ -689,7 +755,7 @@ private struct HistoryView: View {
                                 if model.isLoadingRecordings {
                                     ProgressView()
                                 }
-                                Text(model.isLoadingRecordings ? "姝ｅ湪鏌ヨ鈥? : "鏌ヨ鍘嗗彶褰曞儚")
+                                Text(model.isLoadingRecordings ? "正在查询…" : "查询历史录像")
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -700,7 +766,7 @@ private struct HistoryView: View {
 
                 if model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("姝ｅ湪鍥炴斁")
+                        Text("正在回放")
                             .font(.headline)
                         VLCPlayerView(model: model)
                             .id(model.playerViewID)
@@ -711,7 +777,7 @@ private struct HistoryView: View {
                         Button(role: .destructive) {
                             model.stopReplay()
                         } label: {
-                            Label("鍋滄鍥炴斁", systemImage: "stop.fill")
+                            Label("停止回放", systemImage: "stop.fill")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -719,16 +785,16 @@ private struct HistoryView: View {
                 }
 
                 if model.isLoadingRecordings {
-                    ProgressView("姝ｅ湪璇诲彇鍐呭瓨鍗″綍鍍忊€?)
+                    ProgressView("正在读取内存卡录像…")
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else if model.recordings.isEmpty {
-                    Text(hasLoadedOnce ? "褰撳ぉ娌℃湁鎵惧埌褰曞儚" : "閫夋嫨鏃ユ湡鍚庢煡璇㈠唴瀛樺崱褰曞儚")
+                    Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 32)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("褰曞儚鐗囨锛圽(model.recordings.count)锛?)
+                        Text("录像片段（\(model.recordings.count)）")
                             .font(.headline)
 
                         ForEach(model.recordings) { recording in
@@ -742,7 +808,7 @@ private struct HistoryView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
-                                        Text("鐐瑰嚮鎾斁姝ょ墖娈?)
+                                        Text("点击播放此片段")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }
@@ -763,7 +829,7 @@ private struct HistoryView: View {
             }
             .padding()
         }
-        .navigationTitle("鍐呭瓨鍗″洖鏀?)
+        .navigationTitle("内存卡回放")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -774,9 +840,9 @@ private struct HistoryView: View {
                     model.stopReplay()
                     dismiss()
                 } label: {
-                    Label("杩斿洖", systemImage: "chevron.left")
+                    Label("返回", systemImage: "chevron.left")
                 }
-                .accessibilityLabel("杩斿洖鎾斁")
+                .accessibilityLabel("返回播放")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -784,7 +850,7 @@ private struct HistoryView: View {
                 } label: {
                     Image(systemName: "doc.text.magnifyingglass")
                 }
-                .accessibilityLabel("璇婃柇鏃ュ織")
+                .accessibilityLabel("诊断日志")
             }
         }
         .onAppear {
@@ -803,7 +869,7 @@ private struct HistoryView: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "HH:mm:ss"
-        return "\(formatter.string(from: recording.startDate)) 鈥?\(formatter.string(from: recording.endDate))"
+        return "\(formatter.string(from: recording.startDate)) – \(formatter.string(from: recording.endDate))"
     }
 }
 
@@ -819,10 +885,10 @@ private struct DiagnosticsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("瀹炴椂璁板綍", systemImage: "dot.radiowaves.left.and.right")
+                Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
                     .foregroundStyle(.green)
                 Spacer()
-                Text("\(logger.visibleLines.count) 琛?)
+                Text("\(logger.visibleLines.count) 行")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -834,7 +900,7 @@ private struct DiagnosticsView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     if logger.visibleLines.isEmpty {
-                        Text("鏆傛椂娌℃湁璇婃柇鏃ュ織")
+                        Text("暂时没有诊断日志")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: 200)
                     } else {
@@ -862,11 +928,11 @@ private struct DiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("璇婃柇鏃ュ織")
+        .navigationTitle("诊断日志")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("瀹屾垚") {
+                Button("完成") {
                     dismiss()
                 }
             }
@@ -877,18 +943,18 @@ private struct DiagnosticsView: View {
                         diagnosticsURL = url
                         showingShareSheet = true
                     } label: {
-                        Label("瀵煎嚭鏃ュ織", systemImage: "square.and.arrow.up")
+                        Label("导出日志", systemImage: "square.and.arrow.up")
                     }
 
                     Button(role: .destructive) {
                         model.clearDiagnostics()
                     } label: {
-                        Label("娓呴櫎鏃ュ織", systemImage: "trash")
+                        Label("清除日志", systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("鏃ュ織鎿嶄綔")
+                .accessibilityLabel("日志操作")
             }
         }
         .sheet(isPresented: $showingShareSheet, onDismiss: {
@@ -922,4 +988,3 @@ private struct ActivityView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
-
