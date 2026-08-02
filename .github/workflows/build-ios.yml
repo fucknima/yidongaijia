@@ -6,6 +6,7 @@ on:
     paths:
       - "aijia-direct-source-posix.zip"
       - ".github/workflows/build-ios.yml"
+      - "build-overrides/**"
 
 jobs:
   build:
@@ -17,6 +18,12 @@ jobs:
 
       - name: Unpack source tree
         run: unzip -o -q aijia-direct-source-posix.zip
+
+      - name: Apply source overrides
+        run: |
+          cp -f build-overrides/AijiaAPI.swift iOS/AijiaDirect/AijiaDirect/Services/AijiaAPI.swift
+          cp -f build-overrides/PlayerViewModel.swift iOS/AijiaDirect/AijiaDirect/Services/PlayerViewModel.swift
+          cp -f build-overrides/ContentView.swift iOS/AijiaDirect/AijiaDirect/App/ContentView.swift
 
       - name: Install CocoaPods and dependencies
         working-directory: iOS/AijiaDirect
