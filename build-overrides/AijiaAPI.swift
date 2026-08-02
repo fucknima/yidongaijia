@@ -45,8 +45,8 @@ enum AijiaLoginMethod: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .password: return "瀵嗙爜鐧诲綍"
-        case .smsCode: return "楠岃瘉鐮佺櫥褰?
+        case .password: return "密码登录"
+        case .smsCode: return "验证码登录"
         }
     }
 }
@@ -71,10 +71,10 @@ enum AijiaPTZDirection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .up: return "涓?
-        case .down: return "涓?
-        case .left: return "宸?
-        case .right: return "鍙?
+        case .up: return "上"
+        case .down: return "下"
+        case .left: return "左"
+        case .right: return "右"
         }
     }
 
@@ -129,65 +129,27 @@ enum AijiaAPIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "浜戠杩斿洖鐨勬暟鎹牸寮忔棤娉曡瘑鍒?
+            return "云端返回的数据格式无法识别"
         case let .httpStatus(code):
-            return "浜戠 HTTP 閿欒锛圽(code)锛?
+            return "云端 HTTP 错误（\(code)）"
         case let .server(action, message):
-            return "\(action)锛歕(message)"
+            return "\(action)：\(message)"
         case let .missingField(action, field):
-            return "\(action)缂哄皯瀛楁 \(field)"
+            return "\(action)缺少字段 \(field)"
         case .emptyCameraList:
-            return "璐﹀彿涓嬫病鏈夊彲鐢ㄦ憚鍍忓ご"
+            return "账号下没有可用摄像头"
         case .cameraNotFound:
-            return "娌℃湁鎵惧埌鎸囧畾鐨勬憚鍍忓ご"
+            return "没有找到指定的摄像头"
         case .invalidURL:
-            return "浜戠杩斿洖浜嗘棤鏁堢殑鎾斁鍦板潃"
+            return "云端返回了无效的播放地址"
         case .sessionExpired:
-            return "鐧诲綍浼氳瘽宸插け鏁?
+            return "登录会话已失效"
         }
     }
 }
 
 enum AijiaSigning {
     static let videoSignKey = "r8rw4d1kjwqgqqto9dwsq3ew0ip2np1b"
-
-    // The official HY app uses SecurityUtil.encryptAESDataToHexString:
-    // app_key: for the SMS-login phoneNumber field. The 16-byte key selects
-    // AES-128, and the underlying AESWithEncry call uses ECB + PKCS#7.
-    static func officialEncryptedPhone(_ value: String) throws -> String {
-        let input = Data(value.utf8)
-        let key = Data("CMCCHY1343CLKEBZ".utf8)
-        var output = Data(repeating: 0, count: input.count + kCCBlockSizeAES128)
-        var outputLength = 0
-
-        let status: CCCryptorStatus = input.withUnsafeBytes { inputBuffer in
-            key.withUnsafeBytes { keyBuffer in
-                output.withUnsafeMutableBytes { outputBuffer in
-                    CCCrypt(
-                        CCOperation(kCCEncrypt),
-                        CCAlgorithm(kCCAlgorithmAES128),
-                        CCOptions(kCCOptionPKCS7Padding) | CCOptions(kCCOptionECBMode),
-                        keyBuffer.baseAddress,
-                        key.count,
-                        nil,
-                        inputBuffer.baseAddress,
-                        input.count,
-                        outputBuffer.baseAddress,
-                        outputBuffer.count,
-                        &outputLength
-                    )
-                }
-            }
-        }
-
-        guard status == kCCSuccess else {
-            throw AijiaAPIError.server(action: "楠岃瘉鐮佺櫥褰?, message: "鎵嬫満鍙峰姞瀵嗗け璐?code=\(status)")
-        }
-
-        return output.prefix(outputLength)
-            .map { String(format: "%02X", Int($0)) }
-            .joined()
-    }
 
     static func md5(_ value: String) -> String {
         Insecure.MD5.hash(data: Data(value.utf8))
@@ -211,6 +173,43 @@ enum AijiaSigning {
     static func normalized(_ value: String) -> String {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
+
+    static func officialEncryptedPhone(_ value: String) throws -> String {
+        let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
+        let inputBytes = Array(value.utf8)
+        var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
+        var outputLength = 0
+
+        let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
+            inputBytes.withUnsafeBytes { inputBuffer in
+                outputBytes.withUnsafeMutableBytes { outputBuffer in
+                    CCCrypt(
+                        CCOperation(kCCEncrypt),
+                        CCAlgorithm(kCCAlgorithmAES),
+                        CCOptions(kCCOptionPKCS7Padding | kCCOptionECBMode),
+                        keyBuffer.baseAddress,
+                        kCCKeySizeAES128,
+                        nil,
+                        inputBuffer.baseAddress,
+                        inputBytes.count,
+                        outputBuffer.baseAddress,
+                        outputBytes.count,
+                        &outputLength
+                    )
+                }
+            }
+        }
+
+        guard status == kCCSuccess else {
+            throw AijiaAPIError.server(
+                action: "SMS login",
+                message: "phone encryption failed code=\(status)"
+            )
+        }
+        return outputBytes[..<outputLength]
+            .map { String(format: "%02X", $0) }
+            .joined()
+    }
 }
 
 private func aijiaStringValue(_ value: Any?) -> String {
@@ -223,14 +222,11 @@ private func aijiaStringValue(_ value: Any?) -> String {
 final class AijiaAPI {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
     private static let baseVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
-    private static let baseSMSLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
-    // HYConfig.plist online.IDMP_APPID in the official package.
     private static let officialIDMPAppID = "01010810"
     private static let officialSMSSourceID = "010108"
-    // Values observed in the official requests for this account/camera. A
-    // successful base-login response replaces them with server values.
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
+    private static let baseSMSLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
@@ -276,7 +272,7 @@ final class AijiaAPI {
         self.session = URLSession(configuration: configuration)
         logger.info(
             "API",
-            "鍒濆鍖栧鎴风 account=\(DiagnosticsLogger.maskPhone(phone)) cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
+            "初始化客户端 account=\(DiagnosticsLogger.maskPhone(phone)) cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
         )
     }
 
@@ -315,25 +311,21 @@ final class AijiaAPI {
     }
 
     func requestVerificationCode() async throws {
-        logger.info("AUTH", "寮€濮嬭幏鍙栫煭淇￠獙璇佺爜 account=\(DiagnosticsLogger.maskPhone(phone))")
+        logger.info("AUTH", "requesting SMS verification code account=\(DiagnosticsLogger.maskPhone(phone))")
 
-        // The official ordinary login screen uses HYGetAppValidateCodeService:
-        // POST /base/authentication/sendMsg with these four fields.
-        // getVerifyCodeApp is a separate security-platform flow and requires
-        // a pre-existing security session, so it is not the default path.
         let body: [String: Any] = [
             "phoneNumber": phone,
             "type": "login",
-            "phoneBrand": "鑻规灉鎵嬫満",
+            "phoneBrand": "苹果手机",
             "phoneModel": phoneModel,
         ]
         let payload = try await sendVerificationCode(to: Self.baseVerificationCodeURL, body: body)
         verificationSessionID = verificationSessionIdentifier(in: payload)
         logger.debug(
             "AUTH",
-            "瀹樻柟楠岃瘉鐮佽姹傚凡鎺ュ彈 session=\(verificationSessionID.isEmpty ? "absent" : "present")"
+            "SMS verification request accepted session=\(verificationSessionID.isEmpty ? "absent" : "present")"
         )
-        logger.info("AUTH", "鐭俊楠岃瘉鐮佸彂閫佹垚鍔?)
+        logger.info("AUTH", "SMS verification code sent")
     }
 
     private func sendVerificationCode(to endpoint: URL, body: [String: Any]) async throws -> [String: Any] {
@@ -344,8 +336,23 @@ final class AijiaAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let payload = try await requestJSON(request)
-        try requireSuccess(in: payload, action: "鑾峰彇楠岃瘉鐮?)
+        try requireSuccess(in: payload, action: "获取验证码")
         return payload
+    }
+
+    private func applyOfficialBaseHeaders(to request: inout URLRequest) {
+        applyClientHeaders(to: &request)
+        request.setValue("苹果手机", forHTTPHeaderField: "phoneBrand")
+        request.setValue(phoneModel, forHTTPHeaderField: "phoneType")
+        request.setValue(osVersion, forHTTPHeaderField: "OSversion")
+        request.setValue(phone, forHTTPHeaderField: "phoneNumber")
+        request.setValue("1", forHTTPHeaderField: "userAppPattern")
+        request.setValue("1", forHTTPHeaderField: "OS")
+        request.setValue("0", forHTTPHeaderField: "language")
+        request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
+        if !passID.isEmpty {
+            request.setValue(passID, forHTTPHeaderField: "passId")
+        }
     }
 
     private func verificationSessionIdentifier(in payload: [String: Any]) -> String {
@@ -360,12 +367,12 @@ final class AijiaAPI {
     }
 
     func openStream() async throws -> AijiaStream {
-        logger.info("API", "寮€濮嬭幏鍙栧疄鏃舵祦")
+        logger.info("API", "开始获取实时流")
         var lastError: Error = AijiaAPIError.invalidResponse
 
         for attempt in 0..<2 {
             do {
-                logger.debug("API", "瀹炴椂娴佸皾璇?\(attempt + 1)/2")
+                logger.debug("API", "实时流尝试 \(attempt + 1)/2")
                 if videoToken.isEmpty {
                     try await loginVideo()
                 }
@@ -384,12 +391,12 @@ final class AijiaAPI {
                 let liveURL = try await liveAddress(for: selectedCamera)
                 logger.info(
                     "API",
-                    "鑾峰彇瀹炴椂娴佹垚鍔?camera=\(DiagnosticsLogger.maskIdentifier(selectedCamera.macID)) url=\(DiagnosticsLogger.redactedURL(liveURL))"
+                    "获取实时流成功 camera=\(DiagnosticsLogger.maskIdentifier(selectedCamera.macID)) url=\(DiagnosticsLogger.redactedURL(liveURL))"
                 )
                 return AijiaStream(camera: selectedCamera, url: liveURL)
             } catch {
                 lastError = error
-                logger.error("API", "瀹炴椂娴佸皾璇曞け璐?attempt=\(attempt + 1) error=\(error.localizedDescription)")
+                logger.error("API", "实时流尝试失败 attempt=\(attempt + 1) error=\(error.localizedDescription)")
                 if attempt == 0 {
                     resetSession()
                 }
@@ -401,11 +408,11 @@ final class AijiaAPI {
 
     func keepAlive() async throws {
         guard let camera = camera, !videoToken.isEmpty, !camera.jwtoken.isEmpty else {
-            logger.warning("API", "淇濇椿璺宠繃锛屼細璇濇垨璁惧浠ょ墝涓嶅畬鏁?)
+            logger.warning("API", "保活跳过，会话或设备令牌不完整")
             throw AijiaAPIError.sessionExpired
         }
 
-        logger.debug("API", "鍙戦€佷繚娲?camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
+        logger.debug("API", "发送保活 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
 
         let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/keepOpenLiveAddress")
         let timestamp = currentTimestamp()
@@ -432,8 +439,8 @@ final class AijiaAPI {
         request.httpBody = formBody(parameters)
 
         let payload = try await requestJSON(request)
-        try requireSuccess(in: payload, action: "淇濇椿")
-        logger.debug("API", "淇濇椿鎴愬姛")
+        try requireSuccess(in: payload, action: "保活")
+        logger.debug("API", "保活成功")
     }
 
     func controlPTZ(direction: AijiaPTZDirection) async throws {
@@ -460,8 +467,8 @@ final class AijiaAPI {
             $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
         }
         let payload = try await requestJSON(request)
-        try requireSuccess(in: payload, action: "浜戝彴\(direction.title)杞?)
-        logger.info("PTZ", "浜戝彴鎺у埗鎴愬姛 direction=\(direction.rawValue) apiDirection=\(direction.apiValue)")
+        try requireSuccess(in: payload, action: "云台\(direction.title)转")
+        logger.info("PTZ", "云台控制成功 direction=\(direction.rawValue) apiDirection=\(direction.apiValue)")
     }
 
     func queryRecordings(startTime: Int64, endTime: Int64) async throws -> [AijiaRecording] {
@@ -469,7 +476,7 @@ final class AijiaAPI {
             return try await queryRecordingsOnce(startTime: startTime, endTime: endTime)
         } catch {
             guard isSessionExpiredError(error) else { throw error }
-            logger.warning("API", "鍘嗗彶褰曞儚浼氳瘽宸茶繃鏈燂紝閲嶆柊鐧诲綍鍚庨噸璇?)
+            logger.warning("API", "历史录像会话已过期，重新登录后重试")
             _ = try await refreshCameraSession()
             return try await queryRecordingsOnce(startTime: startTime, endTime: endTime)
         }
@@ -496,7 +503,7 @@ final class AijiaAPI {
             $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
         }
         let payload = try await requestJSON(request)
-        let data = try requireData(in: payload, action: "璇诲彇鍘嗗彶褰曞儚")
+        let data = try requireData(in: payload, action: "读取历史录像")
         let dictionary = data as? [String: Any]
         let rawList = (dictionary?["record_list"] as? [[String: Any]])
             ?? (dictionary?["recordList"] as? [[String: Any]])
@@ -509,28 +516,242 @@ final class AijiaAPI {
             }
             return AijiaRecording(startTime: start, endTime: end)
         }
-        logger.info("REPLAY", "鍘嗗彶褰曞儚鏌ヨ鎴愬姛 count=\(recordings.count)")
+        logger.info("REPLAY", "历史录像查询成功 count=\(recordings.count)")
         return recordings.sorted { $0.startTime < $1.startTime }
     }
 
-    func playRecording(at timest…2354 tokens truncated…neModel": phoneModel,
-            "loginType": "UNIAUTH_PASSWORD",
+    func playRecording(at timestamp: Int64) async throws -> URL {
+        do {
+            return try await playRecordingOnce(at: timestamp)
+        } catch {
+            guard isSessionExpiredError(error) else { throw error }
+            logger.warning("API", "历史回放会话已过期，重新登录后重试")
+            _ = try await refreshCameraSession()
+            return try await playRecordingOnce(at: timestamp)
+        }
+    }
+
+    private func playRecordingOnce(at timestamp: Int64) async throws -> URL {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/playTFLive")
+
+        // The official client allocates the TF playback transfer first. It
+        // requests the playback URL, then moves that transfer to startTime.
+        // Calling playTFLive before getTFLiveAddress returns business code 1.
+        try Task.checkCancellation()
+        let replayURL = try await replayAddress(for: camera)
+        try Task.checkCancellation()
+        logger.debug("REPLAY", "TF replay address preflight complete timestamp=\(timestamp)")
+
+        try await sendPlayRecording(at: timestamp, camera: camera, endpoint: endpoint, action: "打开历史录像")
+        return replayURL
+    }
+
+    /// Moves an already allocated TF transfer to another timestamp. This is
+    /// the official card-replay seek path and intentionally does not request a
+    /// new playback address on every drag.
+    func seekRecording(at timestamp: Int64) async throws {
+        do {
+            try await seekRecordingOnce(at: timestamp)
+        } catch {
+            guard isSessionExpiredError(error) else { throw error }
+            logger.warning("API", "历史回放跳转会话已过期，重新登录后重试")
+            _ = try await refreshCameraSession()
+            try await seekRecordingOnce(at: timestamp)
+        }
+    }
+
+    private func seekRecordingOnce(at timestamp: Int64) async throws {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/playTFLive")
+        try await sendPlayRecording(at: timestamp, camera: camera, endpoint: endpoint, action: "跳转历史录像")
+    }
+
+    private func sendPlayRecording(
+        at timestamp: Int64,
+        camera: AijiaCamera,
+        endpoint: URL,
+        action: String
+    ) async throws {
+
+        let now = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: now),
+            "startTime": String(timestamp),
+            "time": now,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        try Task.checkCancellation()
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: action)
+        logger.debug("REPLAY", "历史录像切换成功 timestamp=\(timestamp)")
+    }
+
+    func keepReplayAlive() async throws {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/keepTFLiveAddress")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: "历史录像保活")
+        logger.debug("REPLAY", "历史录像保活成功")
+    }
+
+    func stopReplay() async throws {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/closeTFLiveTransfer")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: "停止历史录像")
+        logger.info("REPLAY", "历史录像已停止")
+    }
+
+    private func authenticatedCamera() throws -> AijiaCamera {
+        guard let camera = camera, !videoToken.isEmpty, !camera.jwtoken.isEmpty else {
+            throw AijiaAPIError.sessionExpired
+        }
+        return camera
+    }
+
+    private func replayAddress(for camera: AijiaCamera) async throws -> URL {
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/getTFLiveAddress")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedGET(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        let data = try requireData(in: payload, action: "获取历史录像地址")
+        guard let dictionary = data as? [String: Any] else {
+            throw AijiaAPIError.invalidResponse
+        }
+
+        let rawURL = stringValue(dictionary["liveFlv"] ?? dictionary["flv_url"] ?? dictionary["flv"])
+        guard !rawURL.isEmpty, let url = URL(string: rawURL) else {
+            throw AijiaAPIError.invalidURL
+        }
+        logger.debug("REPLAY", "历史录像地址解析成功 url=\(DiagnosticsLogger.redactedURL(url))")
+        return url
+    }
+
+    private func loginBase() async throws {
+        switch loginMethod {
+        case .password:
+            try await loginBaseWithPassword()
+        case .smsCode:
+            try await loginBaseWithSMS()
+        }
+    }
+
+    private func loginBaseWithPassword() async throws {
+        logger.info("API", "开始基础账号密码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
+        guard let password = password, !password.isEmpty else {
+            throw AijiaAPIError.server(action: "登录", message: "缺少密码")
+        }
+
+        let body: [String: Any] = [
+            "virtualAuthdata": AijiaSigning.md5(password),
+            "authType": "10",
+            "userAccount": phone,
+            "authdata": AijiaSigning.sha1("fetion.com.cn:" + password),
         ]
 
-        logger.debug(
-            "AUTH",
-            "鎸夊畼鏂瑰瓧娈垫彁浜ょ煭淇＄櫥褰?phoneCipherLength=\(encryptedPhone.count) appId=\(Self.officialIDMPAppID) provCode=\(userSelectedProvCode.isEmpty ? "empty" : "present")"
-        )
+        var request = URLRequest(url: Self.baseLoginURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (payload, response) = try await requestJSONWithResponse(request)
+        try completeBaseLogin(payload: payload, response: response, action: "登录")
+        logger.info("API", "基础账号密码登录成功")
+    }
+
+    private func loginBaseWithSMS() async throws {
+        logger.info("API", "starting SMS login account=\(DiagnosticsLogger.maskPhone(phone))")
+        guard let verificationCode = verificationCode,
+              !verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AijiaAPIError.server(action: "Login", message: "missing SMS verification code")
+        }
+
+        let encryptedPhone = try AijiaSigning.officialEncryptedPhone(phone)
+        let body: [String: Any] = [
+            "phoneNumber": encryptedPhone,
+            "smsCode": verificationCode,
+            "appId": Self.officialIDMPAppID,
+            "appid": Self.officialIDMPAppID,
+            "provCode": userSelectedProvCode,
+            "deviceUuid": deviceID,
+            "sourceId": Self.officialSMSSourceID,
+            "idfa": "",
+            "channelId": "0",
+            "isWifi": "true",
+            "idfv": deviceID,
+            "phoneID": "",
+            "openUdid": "",
+            "phoneBrand": "苹果手机",
+            "phoneModel": phoneModel,
+            "loginType": "UNIAUTH_PASSWORD",
+        ]
 
         var request = URLRequest(url: Self.baseSMSLoginURL)
         request.httpMethod = "POST"
         applyOfficialBaseHeaders(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: officialBody)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (payload, response) = try await requestJSONWithResponse(request)
-        try completeBaseLogin(payload: payload, response: response, action: "楠岃瘉鐮佺櫥褰?)
-        logger.info("API", "鐭俊楠岃瘉鐮佺櫥褰曟垚鍔?)
+        try completeBaseLogin(payload: payload, response: response, action: "SMS login")
+        logger.info("API", "SMS login succeeded")
     }
 
     private func completeBaseLogin(
@@ -544,10 +765,10 @@ final class AijiaAPI {
         }
 
         let passID = stringValue(dataDictionary["passId"])
-        let cookie = baseSessionCookie(from: response)
+        let cookie = sessionCookie(from: response)
 
         guard !passID.isEmpty, !cookie.isEmpty else {
-            throw AijiaAPIError.server(action: action, message: "娌℃湁杩斿洖鏈夋晥浼氳瘽")
+            throw AijiaAPIError.server(action: action, message: "没有返回有效会话")
         }
 
         self.passID = passID
@@ -562,29 +783,21 @@ final class AijiaAPI {
         }
     }
 
-    private func baseSessionCookie(from response: HTTPURLResponse) -> String {
-        if let header = response.value(forHTTPHeaderField: "Set-Cookie") {
-            let firstCookie = header
-                .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true)
-                .first
-            if let cookieValue = firstCookie?
-                .split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
-                .last,
-               !cookieValue.isEmpty {
-                return String(cookieValue)
-            }
+    private func sessionCookie(from response: HTTPURLResponse) -> String {
+        if let header = response.value(forHTTPHeaderField: "Set-Cookie"),
+           let firstCookie = header.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first,
+           let cookieValue = firstCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true).last {
+            return String(cookieValue)
         }
 
-        let cookieURL = response.url ?? Self.baseLoginURL
-        let cookies = session.configuration.httpCookieStorage?.cookies(for: cookieURL) ?? []
+        let storage = session.configuration.httpCookieStorage
+        let cookies = response.url.flatMap { storage?.cookies(for: $0) } ?? []
         let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
-        return cookies.first(where: { preferredNames.contains($0.name.lowercased()) })?.value
-            ?? cookies.first?.value
-            ?? ""
+        return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
     }
 
     private func loginVideo() async throws {
-        logger.info("API", "寮€濮嬭棰戞湇鍔＄櫥褰?)
+        logger.info("API", "开始视频服务登录")
         if hjqToken.isEmpty || passID.isEmpty {
             try await loginBase()
         }
@@ -609,17 +822,17 @@ final class AijiaAPI {
         request.httpBody = formBody(parameters)
 
         let payload = try await requestJSON(request)
-        let data = try requireData(in: payload, action: "瑙嗛鐧诲綍")
+        let data = try requireData(in: payload, action: "视频登录")
         guard let dataDictionary = data as? [String: Any] else {
             throw AijiaAPIError.invalidResponse
         }
 
         let token = stringValue(dataDictionary["token"])
         guard !token.isEmpty else {
-            throw AijiaAPIError.missingField(action: "瑙嗛鐧诲綍", field: "token")
+            throw AijiaAPIError.missingField(action: "视频登录", field: "token")
         }
         videoToken = token
-        logger.info("API", "瑙嗛鏈嶅姟鐧诲綍鎴愬姛 token=present")
+        logger.info("API", "视频服务登录成功 token=present")
     }
 
     private func cameraList() async throws -> [[String: Any]] {
@@ -644,16 +857,16 @@ final class AijiaAPI {
             $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
         }
         let payload = try await requestJSON(request)
-        let data = try requireData(in: payload, action: "璇诲彇鎽勫儚澶村垪琛?)
+        let data = try requireData(in: payload, action: "读取摄像头列表")
 
         if let list = data as? [[String: Any]] {
             guard !list.isEmpty else { throw AijiaAPIError.emptyCameraList }
-            logger.info("API", "璇诲彇鎽勫儚澶村垪琛ㄦ垚鍔?count=\(list.count)")
+            logger.info("API", "读取摄像头列表成功 count=\(list.count)")
             return list
         }
         if let dictionary = data as? [String: Any], let list = dictionary["list"] as? [[String: Any]] {
             guard !list.isEmpty else { throw AijiaAPIError.emptyCameraList }
-            logger.info("API", "璇诲彇鎽勫儚澶村垪琛ㄦ垚鍔?count=\(list.count)")
+            logger.info("API", "读取摄像头列表成功 count=\(list.count)")
             return list
         }
         throw AijiaAPIError.invalidResponse
@@ -665,7 +878,7 @@ final class AijiaAPI {
             throw AijiaAPIError.emptyCameraList
         }
         guard !cameraSelector.isEmpty else {
-            logger.info("API", "閫夋嫨绗竴鍙版憚鍍忓ご camera=\(DiagnosticsLogger.maskIdentifier(candidates[0].macID))")
+            logger.info("API", "选择第一台摄像头 camera=\(DiagnosticsLogger.maskIdentifier(candidates[0].macID))")
             return candidates[0]
         }
 
@@ -677,7 +890,7 @@ final class AijiaAPI {
         guard let match = match else {
             throw AijiaAPIError.cameraNotFound
         }
-        logger.info("API", "鎸夐€夋嫨鍣ㄥ尮閰嶆憚鍍忓ご camera=\(DiagnosticsLogger.maskIdentifier(match.macID))")
+        logger.info("API", "按选择器匹配摄像头 camera=\(DiagnosticsLogger.maskIdentifier(match.macID))")
         return match
     }
 
@@ -703,18 +916,18 @@ final class AijiaAPI {
         if let data = payload["data"] as? [String: Any] {
             let token = stringValue(data["jwtoken"])
             if !token.isEmpty {
-                logger.debug("API", "鑾峰彇璁惧浠ょ墝鎴愬姛 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
+                logger.debug("API", "获取设备令牌成功 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
                 return token
             }
         }
         let token = stringValue(payload["jwtoken"])
         if !token.isEmpty {
-            logger.debug("API", "鑾峰彇璁惧浠ょ墝鎴愬姛 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
+            logger.debug("API", "获取设备令牌成功 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
             return token
         }
 
         let message = stringValue(payload["msg"] ?? payload["message"]) 
-        throw AijiaAPIError.server(action: "鑾峰彇璁惧浠ょ墝", message: message.isEmpty ? "鏈煡閿欒" : message)
+        throw AijiaAPIError.server(action: "获取设备令牌", message: message.isEmpty ? "未知错误" : message)
     }
 
     private func liveAddress(for camera: AijiaCamera) async throws -> URL {
@@ -736,7 +949,7 @@ final class AijiaAPI {
             $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
         }
         let payload = try await requestJSON(request)
-        let data = try requireData(in: payload, action: "鑾峰彇瀹炴椂鍦板潃")
+        let data = try requireData(in: payload, action: "获取实时地址")
         guard let dataDictionary = data as? [String: Any] else {
             throw AijiaAPIError.invalidResponse
         }
@@ -745,7 +958,7 @@ final class AijiaAPI {
         guard let url = URL(string: rawURL), !rawURL.isEmpty else {
             throw AijiaAPIError.invalidURL
         }
-        logger.debug("API", "瀹炴椂鍦板潃瑙ｆ瀽鎴愬姛 url=\(DiagnosticsLogger.redactedURL(url))")
+        logger.debug("API", "实时地址解析成功 url=\(DiagnosticsLogger.redactedURL(url))")
         return url
     }
 
@@ -758,7 +971,7 @@ final class AijiaAPI {
             selectedCamera.jwtoken = try await deviceToken(for: selectedCamera)
         }
         camera = selectedCamera
-        logger.info("API", "璁惧浼氳瘽鍒锋柊鎴愬姛 camera=\(DiagnosticsLogger.maskIdentifier(selectedCamera.macID))")
+        logger.info("API", "设备会话刷新成功 camera=\(DiagnosticsLogger.maskIdentifier(selectedCamera.macID))")
         return selectedCamera
     }
 
@@ -775,13 +988,13 @@ final class AijiaAPI {
     }
 
     private func resetSession() {
-        logger.warning("API", "閲嶇疆浜戠浼氳瘽")
+        logger.warning("API", "重置云端会话")
         hjqToken = ""
         passID = ""
         videoToken = ""
         camera = nil
-        userSelectedProvCode = Self.defaultProvCode
-        userSelectedCityCode = Self.defaultCityCode
+        userSelectedProvCode = ""
+        userSelectedCityCode = ""
     }
 
     private func signedGET(
@@ -842,21 +1055,6 @@ final class AijiaAPI {
         )
     }
 
-    private func applyOfficialBaseHeaders(to request: inout URLRequest) {
-        applyClientHeaders(to: &request)
-        request.setValue("鑻规灉鎵嬫満", forHTTPHeaderField: "phoneBrand")
-        request.setValue(phoneModel, forHTTPHeaderField: "phoneType")
-        request.setValue(osVersion, forHTTPHeaderField: "OSversion")
-        request.setValue(phone, forHTTPHeaderField: "phoneNumber")
-        request.setValue("1", forHTTPHeaderField: "userAppPattern")
-        request.setValue("1", forHTTPHeaderField: "OS")
-        request.setValue("0", forHTTPHeaderField: "language")
-        request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
-        if !passID.isEmpty {
-            request.setValue(passID, forHTTPHeaderField: "passId")
-        }
-    }
-
     private func endpoint(base: URL, path: String) throws -> URL {
         let baseString = base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: baseString + path) else {
@@ -881,7 +1079,7 @@ final class AijiaAPI {
     private func requestJSONWithResponse(_ request: URLRequest) async throws -> ([String: Any], HTTPURLResponse) {
         let endpoint = request.url.map(DiagnosticsLogger.redactedURL) ?? "<unknown>"
         let startedAt = Date()
-        logger.debug("HTTP", "璇锋眰寮€濮?method=\(request.httpMethod ?? "GET") endpoint=\(endpoint)")
+        logger.debug("HTTP", "请求开始 method=\(request.httpMethod ?? "GET") endpoint=\(endpoint)")
 
         let result: (Data, URLResponse)
         do {
@@ -890,30 +1088,30 @@ final class AijiaAPI {
             let duration = Int(Date().timeIntervalSince(startedAt) * 1_000)
             logger.error(
                 "HTTP",
-                "璇锋眰澶辫触 endpoint=\(endpoint) durationMs=\(duration) error=\(error.localizedDescription)"
+                "请求失败 endpoint=\(endpoint) durationMs=\(duration) error=\(error.localizedDescription)"
             )
             throw error
         }
         let data = result.0
         let response = result.1
         guard let httpResponse = response as? HTTPURLResponse else {
-            logger.error("HTTP", "鍝嶅簲涓嶆槸 HTTP endpoint=\(endpoint)")
+            logger.error("HTTP", "响应不是 HTTP endpoint=\(endpoint)")
             throw AijiaAPIError.invalidResponse
         }
         let duration = Int(Date().timeIntervalSince(startedAt) * 1_000)
         let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "<none>"
         logger.debug(
             "HTTP",
-            "鍝嶅簲鏀跺埌 status=\(httpResponse.statusCode) endpoint=\(endpoint) bytes=\(data.count) durationMs=\(duration) contentType=\(contentType)"
+            "响应收到 status=\(httpResponse.statusCode) endpoint=\(endpoint) bytes=\(data.count) durationMs=\(duration) contentType=\(contentType)"
         )
         guard (200..<300).contains(httpResponse.statusCode) else {
             throw AijiaAPIError.httpStatus(httpResponse.statusCode)
         }
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            logger.error("HTTP", "鍝嶅簲 JSON 鏍煎紡鏃犳硶璇嗗埆 endpoint=\(endpoint)")
+            logger.error("HTTP", "响应 JSON 格式无法识别 endpoint=\(endpoint)")
             throw AijiaAPIError.invalidResponse
         }
-        logger.debug("HTTP", "鍝嶅簲缁撴瀯 endpoint=\(endpoint) \(DiagnosticsLogger.jsonSummary(payload))")
+        logger.debug("HTTP", "响应结构 endpoint=\(endpoint) \(DiagnosticsLogger.jsonSummary(payload))")
         return (payload, httpResponse)
     }
 
@@ -921,7 +1119,7 @@ final class AijiaAPI {
         try requireSuccess(in: payload, action: action)
         guard let data = payload["data"], !(data is NSNull) else {
             let message = stringValue(payload["msg"] ?? payload["message"])
-            throw AijiaAPIError.server(action: action, message: message.isEmpty ? "鏈煡閿欒" : message)
+            throw AijiaAPIError.server(action: action, message: message.isEmpty ? "未知错误" : message)
         }
         return data
     }
@@ -930,8 +1128,8 @@ final class AijiaAPI {
         let codeString = stringValue(payload["code"])
         if !codeString.isEmpty, !Self.successfulResponseCodes.contains(codeString) {
             let message = stringValue(payload["msg"] ?? payload["message"])
-            logger.error("API", "\(action)杩斿洖涓氬姟閿欒 code=\(codeString) message=\(message)")
-            throw AijiaAPIError.server(action: action, message: message.isEmpty ? "閿欒鐮?\(codeString)" : message)
+            logger.error("API", "\(action)返回业务错误 code=\(codeString) message=\(message)")
+            throw AijiaAPIError.server(action: action, message: message.isEmpty ? "错误码 \(codeString)" : message)
         }
     }
 
@@ -979,4 +1177,3 @@ private func aijiaOperatingSystemVersion() -> String {
     let version = ProcessInfo.processInfo.operatingSystemVersion
     return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
 }
-
