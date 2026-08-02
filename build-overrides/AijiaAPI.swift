@@ -519,7 +519,119 @@ final class AijiaAPI {
             "userId": phone,
         ]
         parameters["sign"] = AijiaSigning.videoSignature(
-            paramet…1150 tokens truncated….isEmpty else {
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        try Task.checkCancellation()
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: action)
+        logger.debug("REPLAY", "历史录像切换成功 timestamp=\(timestamp)")
+    }
+
+    func keepReplayAlive() async throws {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/keepTFLiveAddress")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: "历史录像保活")
+        logger.debug("REPLAY", "历史录像保活成功")
+    }
+
+    func stopReplay() async throws {
+        let camera = try authenticatedCamera()
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/closeTFLiveTransfer")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedFormPOST(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: "停止历史录像")
+        logger.info("REPLAY", "历史录像已停止")
+    }
+
+    private func authenticatedCamera() throws -> AijiaCamera {
+        guard let camera = camera, !videoToken.isEmpty, !camera.jwtoken.isEmpty else {
+            throw AijiaAPIError.sessionExpired
+        }
+        return camera
+    }
+
+    private func replayAddress(for camera: AijiaCamera) async throws -> URL {
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/device/getTFLiveAddress")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": requestNonce(timestamp: timestamp),
+            "time": timestamp,
+            "userId": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedGET(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        let data = try requireData(in: payload, action: "获取历史录像地址")
+        guard let dictionary = data as? [String: Any] else {
+            throw AijiaAPIError.invalidResponse
+        }
+
+        let rawURL = stringValue(dictionary["liveFlv"] ?? dictionary["flv_url"] ?? dictionary["flv"])
+        guard !rawURL.isEmpty, let url = URL(string: rawURL) else {
+            throw AijiaAPIError.invalidURL
+        }
+        logger.debug("REPLAY", "历史录像地址解析成功 url=\(DiagnosticsLogger.redactedURL(url))")
+        return url
+    }
+
+    private func loginBase() async throws {
+        switch loginMethod {
+        case .password:
+            try await loginBaseWithPassword()
+        case .smsCode:
+            try await loginBaseWithSMS()
+        }
+    }
+
+    private func loginBaseWithPassword() async throws {
+        logger.info("API", "开始基础账号密码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
+        guard let password = password, !password.isEmpty else {
             throw AijiaAPIError.server(action: "登录", message: "缺少密码")
         }
 
@@ -987,4 +1099,3 @@ private func aijiaOperatingSystemVersion() -> String {
     let version = ProcessInfo.processInfo.operatingSystemVersion
     return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
 }
-
