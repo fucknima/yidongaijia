@@ -47,6 +47,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var playbackTask: Task<Void, Never>?
     private var verificationRequestTask: Task<Void, Never>?
     private var verificationCountdownTask: Task<Void, Never>?
+    private var verificationClient: AijiaAPI?
+    private var verificationClientPhone = ""
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
     private weak var drawable: UIView?
@@ -103,6 +105,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         verificationRequestTask?.cancel()
         let selectedCamera = cameraSelector
         let client = AijiaAPI(phone: trimmedPhone, cameraSelector: selectedCamera)
+        verificationClient = client
+        verificationClientPhone = trimmedPhone
         isSendingVerificationCode = true
         hasError = false
         status = "正在发送验证码…"
@@ -121,6 +125,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             } catch {
                 guard let self = self else { return }
                 self.verificationRequestTask = nil
+                if self.verificationClient === client {
+                    self.verificationClient = nil
+                    self.verificationClientPhone = ""
+                }
                 self.isSendingVerificationCode = false
                 self.hasError = true
                 self.status = "获取验证码失败：\(error.localizedDescription)"
@@ -185,11 +193,19 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 cameraSelector: selectedCamera
             )
         case .smsCode:
-            client = AijiaAPI(
-                phone: trimmedPhone,
-                verificationCode: loginCode,
-                cameraSelector: selectedCamera
-            )
+            if let pendingClient = verificationClient,
+               verificationClientPhone == trimmedPhone {
+                pendingClient.setVerificationCode(loginCode)
+                client = pendingClient
+                logger.info("AUTH", "复用验证码请求会话进行登录")
+            } else {
+                client = AijiaAPI(
+                    phone: trimmedPhone,
+                    verificationCode: loginCode,
+                    cameraSelector: selectedCamera
+                )
+                logger.warning("AUTH", "未找到同一验证码请求会话，使用新会话尝试登录")
+            }
         }
         api = client
         shouldShowLogin = false
@@ -242,6 +258,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     verificationCountdownTask?.cancel()
                     verificationCountdownTask = nil
                     verificationCountdown = 0
+                    verificationClient = nil
+                    verificationClientPhone = ""
                     logger.info("AUTH", "验证码登录成功，未保存短信验证码")
                 }
 
@@ -269,6 +287,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         logger.info("PLAYER", "停止播放")
         verificationRequestTask?.cancel()
         verificationRequestTask = nil
+        verificationClient = nil
+        verificationClientPhone = ""
         verificationCountdownTask?.cancel()
         verificationCountdownTask = nil
         isSendingVerificationCode = false
