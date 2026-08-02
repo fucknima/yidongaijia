@@ -269,9 +269,10 @@ final class AijiaAPI {
     private var userSelectedProvCode = "57"
     private var userSelectedCityCode = "610400"
 
-    // The official client sends a user-facing iPhone model, not hw.machine
-    // (for example, not "iPhone17,1").
+    // The base SDK uses the human-readable iphoneType (for example,
+    // iPhone17,1 -> iPhone 16 Pro) while the video headers use hw.machine.
     private let phoneModel = AijiaDeviceIdentity.phoneModel()
+    private let hardwareModel = AijiaDeviceIdentity.hardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
 
     private init(
@@ -287,11 +288,15 @@ final class AijiaAPI {
         self.loginMethod = loginMethod
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
-        let configuration = URLSessionConfiguration.ephemeral
+        // Official KSAdapterAFNetWorkThree reads JSESSIONID from the
+        // process-wide shared cookie storage. Keep the same jar so a
+        // send-code request and a later login request see the same session,
+        // even if the UI creates a new API wrapper.
+        let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
-        configuration.httpCookieStorage = HTTPCookieStorage()
+        configuration.httpCookieStorage = HTTPCookieStorage.shared
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
         self.session = URLSession(configuration: configuration)
@@ -368,7 +373,7 @@ final class AijiaAPI {
         applyOfficialBaseHeaders(to: &request)
         applyBaseSessionCookie(to: &request)
         request.setValue("10.8.0", forHTTPHeaderField: "version")
-        request.setValue("WIFI", forHTTPHeaderField: "netStatus")
+        request.setValue("WiFi", forHTTPHeaderField: "netStatus")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "appVersion": "10.8.0",
@@ -402,19 +407,31 @@ final class AijiaAPI {
     }
 
     private func applyOfficialBaseHeaders(to request: inout URLRequest) {
-        applyClientHeaders(to: &request)
-        request.setValue("苹果手机", forHTTPHeaderField: "phoneBrand")
-        request.setValue(phoneModel, forHTTPHeaderField: "phoneType")
-        request.setValue(osVersion, forHTTPHeaderField: "OSversion")
-        request.setValue(phone, forHTTPHeaderField: "phoneNumber")
-        request.setValue("1", forHTTPHeaderField: "userAppPattern")
-        request.setValue("1", forHTTPHeaderField: "OS")
+        // These are the base-service headers seen in the official
+        // certificate capture. They are intentionally separate from the
+        // video-service headers (which use Version=6.11.1 and PhoneModel as
+        // the hardware identifier).
+        request.setValue("10.8.0", forHTTPHeaderField: "version")
+        request.setValue(userSelectedCityCode, forHTTPHeaderField: "userSelectedCityCode")
         request.setValue("0", forHTTPHeaderField: "language")
-        request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
+        request.setValue("1", forHTTPHeaderField: "userAppPattern")
         request.setValue(
             "zhihuiguanjia/10.8.0 (iPhone; iOS \(osVersion); Scale/3.00);UniApp;cmhiAiJia;HjqAppCategory/Phone",
             forHTTPHeaderField: "User-Agent"
         )
+        request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
+        request.setValue(phoneModel, forHTTPHeaderField: "phoneType")
+        request.setValue(userSelectedProvCode, forHTTPHeaderField: "userSelectedProvCode")
+        request.setValue("1", forHTTPHeaderField: "OS")
+        // The official base capture carries an empty phoneNumber header;
+        // the phone itself is in the JSON body.
+        request.setValue("", forHTTPHeaderField: "phoneNumber")
+        request.setValue("WiFi", forHTTPHeaderField: "netStatus")
+        request.setValue(userSelectedProvCode, forHTTPHeaderField: "provCode")
+        request.setValue(userSelectedCityCode, forHTTPHeaderField: "cityCode")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("zh-Hans-CN;q=1, en-CN;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue(osVersion, forHTTPHeaderField: "OSversion")
         if !passID.isEmpty {
             request.setValue(passID, forHTTPHeaderField: "passId")
         }
@@ -869,10 +886,22 @@ final class AijiaAPI {
             }
         }
 
-        let storage = session.configuration.httpCookieStorage
-        let cookies = response.url.flatMap { storage?.cookies(for: $0) } ?? []
+        let storage = HTTPCookieStorage.shared
+        let cookies = response.url.flatMap { storage.cookies(for: $0) } ?? []
         let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
         return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
+    }
+
+    private func persistResponseCookies(from response: HTTPURLResponse) {
+        guard let url = response.url else { return }
+        var headers: [String: String] = [:]
+        for (key, value) in response.allHeaderFields {
+            headers[String(describing: key)] = String(describing: value)
+        }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+        for cookie in cookies {
+            HTTPCookieStorage.shared.setCookie(cookie)
+        }
     }
 
     private func sessionCookieHeader(from response: HTTPURLResponse) -> String? {
@@ -908,7 +937,9 @@ final class AijiaAPI {
 
     private func currentBaseSessionCookieHeader() -> String {
         let urls = [Self.baseCertificateURL, Self.baseVerificationCodeURL, Self.baseSMSLoginURL]
-        let storage = session.configuration.httpCookieStorage
+        // Official code enumerates HTTPCookieStorage.shared. Do not scope
+        // the lookup to a private URLSession cookie jar.
+        let storage = HTTPCookieStorage.shared
         var seen = Set<String>()
         var values: [String] = []
         for url in urls {
@@ -923,6 +954,7 @@ final class AijiaAPI {
     }
 
     private func refreshBaseSessionCookies(from response: HTTPURLResponse) {
+        persistResponseCookies(from: response)
         let storedHeader = currentBaseSessionCookieHeader()
         if !storedHeader.isEmpty {
             baseSessionCookieHeader = storedHeader
@@ -1205,7 +1237,7 @@ final class AijiaAPI {
         request.setValue("hejiaqin", forHTTPHeaderField: "AppKey")
         request.setValue(deviceID, forHTTPHeaderField: "DeviceId")
         request.setValue("IOS", forHTTPHeaderField: "DeviceType")
-        request.setValue(phoneModel, forHTTPHeaderField: "PhoneModel")
+        request.setValue(hardwareModel, forHTTPHeaderField: "PhoneModel")
         request.setValue(osVersion, forHTTPHeaderField: "OsVersion")
         request.setValue(osVersion, forHTTPHeaderField: "OSType")
         request.setValue("WIFI", forHTTPHeaderField: "NetworkType")
@@ -1378,13 +1410,45 @@ private enum AijiaDeviceIdentity {
 #endif
     }
 
-    static func phoneModel() -> String {
-#if canImport(UIKit)
-        let model = UIDevice.current.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        return model.isEmpty ? "iPhone" : model
+    static func hardwareModel() -> String {
+#if canImport(Darwin)
+        var size: Int = 0
+        guard sysctlbyname("hw.machine", nil, &size, nil, 0) == 0, size > 1 else {
+            return "iPhone"
+        }
+
+        var machine = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.machine", &machine, &size, nil, 0) == 0 else {
+            return "iPhone"
+        }
+        return String(cString: machine)
 #else
         return "iPhone"
 #endif
+    }
+
+    static func phoneModel() -> String {
+        // This is the official HYCheckVersionService iphoneType mapping
+        // used by the base authentication request.
+        let mapping: [String: String] = [
+            "iPhone14,5": "iPhone 13",
+            "iPhone14,2": "iPhone 13 Pro",
+            "iPhone14,3": "iPhone 13 Pro Max",
+            "iPhone14,4": "iPhone 13 mini",
+            "iPhone15,2": "iPhone 14 Pro",
+            "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone15,4": "iPhone 15",
+            "iPhone15,5": "iPhone 15 Plus",
+            "iPhone16,1": "iPhone 15 Pro",
+            "iPhone16,2": "iPhone 15 Pro Max",
+            "iPhone17,1": "iPhone 16 Pro",
+            "iPhone17,2": "iPhone 16 Pro Max",
+            "iPhone17,3": "iPhone 16",
+            "iPhone17,4": "iPhone 16 Plus",
+            "iPhone17,5": "iPhone 16e"
+        ]
+        let hardware = hardwareModel()
+        return mapping[hardware] ?? hardware
     }
 
     static var isWiFi: Bool {
