@@ -221,6 +221,7 @@ private func aijiaStringValue(_ value: Any?) -> String {
 }
 
 final class AijiaAPI {
+    private static let baseCertificateURL = URL(string: "https://base.hjq.komect.com/base/app/certificate")!
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
     private static let baseVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
     private static let officialIDMPAppID = "01010810"
@@ -246,6 +247,7 @@ final class AijiaAPI {
     private var passID = ""
     private var videoToken = ""
     private var verificationSessionID = ""
+    private var baseSessionCookieHeader = ""
     private var camera: AijiaCamera?
     private var userSelectedProvCode = "57"
     private var userSelectedCityCode = "610400"
@@ -270,6 +272,9 @@ final class AijiaAPI {
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
+        configuration.httpCookieStorage = HTTPCookieStorage()
+        configuration.httpShouldSetCookies = true
+        configuration.httpCookieAcceptPolicy = .always
         self.session = URLSession(configuration: configuration)
         logger.info(
             "API",
@@ -314,31 +319,77 @@ final class AijiaAPI {
     func requestVerificationCode() async throws {
         logger.info("AUTH", "requesting SMS verification code account=\(DiagnosticsLogger.maskPhone(phone))")
 
+        // The official client initializes a base-session cookie before asking
+        // for the SMS code. The SMS login endpoint validates that same session.
+        try await prepareBaseSession()
+
         let body: [String: Any] = [
             "phoneNumber": phone,
             "type": "login",
             "phoneBrand": "苹果手机",
             "phoneModel": phoneModel,
         ]
-        let payload = try await sendVerificationCode(to: Self.baseVerificationCodeURL, body: body)
+        let (payload, response) = try await sendVerificationCode(to: Self.baseVerificationCodeURL, body: body)
+        if let cookieHeader = sessionCookieHeader(from: response), !cookieHeader.isEmpty {
+            baseSessionCookieHeader = cookieHeader
+        }
+        if baseSessionCookieHeader.isEmpty {
+            baseSessionCookieHeader = currentBaseSessionCookieHeader()
+        }
+
         verificationSessionID = verificationSessionIdentifier(in: payload)
+        let sessionPresent = !verificationSessionID.isEmpty || !baseSessionCookieHeader.isEmpty
         logger.debug(
             "AUTH",
-            "SMS verification request accepted session=\(verificationSessionID.isEmpty ? "absent" : "present")"
+            "SMS verification request accepted session=\(sessionPresent ? "present" : "absent") cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present")"
         )
         logger.info("AUTH", "SMS verification code sent")
     }
 
-    private func sendVerificationCode(to endpoint: URL, body: [String: Any]) async throws -> [String: Any] {
+    private func prepareBaseSession() async throws {
+        logger.debug("AUTH", "初始化基础认证会话")
+
+        var request = URLRequest(url: Self.baseCertificateURL)
+        request.httpMethod = "POST"
+        applyOfficialBaseHeaders(to: &request)
+        applyBaseSessionCookie(to: &request)
+        request.setValue("10.8.0", forHTTPHeaderField: "version")
+        request.setValue("WIFI", forHTTPHeaderField: "netStatus")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "appVersion": "10.8.0",
+            "version": 6,
+            "type": 11,
+        ])
+
+        let (payload, response) = try await requestJSONWithResponse(request)
+        try requireSuccess(in: payload, action: "初始化基础认证会话")
+        if let cookieHeader = sessionCookieHeader(from: response), !cookieHeader.isEmpty {
+            baseSessionCookieHeader = cookieHeader
+        }
+        if baseSessionCookieHeader.isEmpty {
+            baseSessionCookieHeader = currentBaseSessionCookieHeader()
+        }
+        logger.debug(
+            "AUTH",
+            "基础认证会话初始化完成 cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present")"
+        )
+    }
+
+    private func sendVerificationCode(
+        to endpoint: URL,
+        body: [String: Any]
+    ) async throws -> ([String: Any], HTTPURLResponse) {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         applyOfficialBaseHeaders(to: &request)
+        applyBaseSessionCookie(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let payload = try await requestJSON(request)
+        let (payload, response) = try await requestJSONWithResponse(request)
         try requireSuccess(in: payload, action: "获取验证码")
-        return payload
+        return (payload, response)
     }
 
     private func applyOfficialBaseHeaders(to request: inout URLRequest) {
@@ -351,6 +402,10 @@ final class AijiaAPI {
         request.setValue("1", forHTTPHeaderField: "OS")
         request.setValue("0", forHTTPHeaderField: "language")
         request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
+        request.setValue(
+            "zhihuiguanjia/10.8.0 (iPhone; iOS \(osVersion); Scale/3.00);UniApp;cmhiAiJia;HjqAppCategory/Phone",
+            forHTTPHeaderField: "User-Agent"
+        )
         if !passID.isEmpty {
             request.setValue(passID, forHTTPHeaderField: "passId")
         }
@@ -744,13 +799,28 @@ final class AijiaAPI {
             "loginType": "UNIAUTH_PASSWORD",
         ]
 
+        if baseSessionCookieHeader.isEmpty {
+            baseSessionCookieHeader = currentBaseSessionCookieHeader()
+        }
+        if baseSessionCookieHeader.isEmpty {
+            try await prepareBaseSession()
+        }
+
         var request = URLRequest(url: Self.baseSMSLoginURL)
         request.httpMethod = "POST"
         applyOfficialBaseHeaders(to: &request)
+        applyBaseSessionCookie(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        logger.debug(
+            "AUTH",
+            "SMS login carrying base session cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present")"
+        )
         let (payload, response) = try await requestJSONWithResponse(request)
+        if let cookieHeader = sessionCookieHeader(from: response), !cookieHeader.isEmpty {
+            baseSessionCookieHeader = cookieHeader
+        }
         try completeBaseLogin(payload: payload, response: response, action: "SMS login")
         logger.info("API", "SMS login succeeded")
     }
@@ -785,16 +855,76 @@ final class AijiaAPI {
     }
 
     private func sessionCookie(from response: HTTPURLResponse) -> String {
-        if let header = response.value(forHTTPHeaderField: "Set-Cookie"),
-           let firstCookie = header.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first,
-           let cookieValue = firstCookie.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true).last {
-            return String(cookieValue)
+        if let header = sessionCookieHeader(from: response) {
+            let parts = header.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+            if parts.count == 2 {
+                return String(parts[1])
+            }
         }
 
         let storage = session.configuration.httpCookieStorage
         let cookies = response.url.flatMap { storage?.cookies(for: $0) } ?? []
         let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
         return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
+    }
+
+    private func sessionCookieHeader(from response: HTTPURLResponse) -> String? {
+        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
+        if let url = response.url {
+            var fields: [String: String] = [:]
+            for (key, value) in response.allHeaderFields {
+                fields[String(describing: key)] = String(describing: value)
+            }
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+            if let cookie = cookies.first(where: { preferredNames.contains($0.name.lowercased()) }) {
+                return "\(cookie.name)=\(cookie.value)"
+            }
+        }
+
+        guard let rawHeader = response.value(forHTTPHeaderField: "Set-Cookie") else {
+            return nil
+        }
+        for part in rawHeader.split(separator: ",") {
+            guard let first = part.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first else {
+                continue
+            }
+            let pieces = first.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+            guard pieces.count == 2 else { continue }
+            let name = String(pieces[0]).trimmingCharacters(in: .whitespaces)
+            let value = String(pieces[1]).trimmingCharacters(in: .whitespaces)
+            if preferredNames.contains(name.lowercased()), !value.isEmpty {
+                return "\(name)=\(value)"
+            }
+        }
+        return nil
+    }
+
+    private func currentBaseSessionCookieHeader() -> String {
+        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
+        let urls = [Self.baseCertificateURL, Self.baseVerificationCodeURL, Self.baseSMSLoginURL]
+        let storage = session.configuration.httpCookieStorage
+        for url in urls {
+            let cookies = storage?.cookies(for: url) ?? []
+            if let cookie = cookies.first(where: { preferredNames.contains($0.name.lowercased()) }) {
+                return "\(cookie.name)=\(cookie.value)"
+            }
+        }
+        return ""
+    }
+
+    private func applyBaseSessionCookie(to request: inout URLRequest) {
+        let cookieHeader = baseSessionCookieHeader.isEmpty
+            ? currentBaseSessionCookieHeader()
+            : baseSessionCookieHeader
+        guard !cookieHeader.isEmpty else {
+            return
+        }
+
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        let parts = cookieHeader.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+        if parts.count == 2, parts[0].lowercased() == "jsessionid" {
+            request.setValue(String(parts[1]), forHTTPHeaderField: "JSESSIONID")
+        }
     }
 
     private func loginVideo() async throws {
@@ -994,8 +1124,8 @@ final class AijiaAPI {
         passID = ""
         videoToken = ""
         camera = nil
-        userSelectedProvCode = ""
-        userSelectedCityCode = ""
+        userSelectedProvCode = Self.defaultProvCode
+        userSelectedCityCode = Self.defaultCityCode
     }
 
     private func signedGET(
