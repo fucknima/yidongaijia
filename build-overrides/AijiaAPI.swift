@@ -183,8 +183,7 @@ private func aijiaStringValue(_ value: Any?) -> String {
 
 final class AijiaAPI {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
-    private static let baseSendVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
-    private static let baseSendVerificationCodeProURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsgPro")!
+    private static let baseSecurityVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/user/login/getVerifyCodeApp")!
     private static let baseSMSLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
@@ -193,7 +192,7 @@ final class AijiaAPI {
 
     private let phone: String
     private let password: String?
-    private let verificationCode: String?
+    private var verificationCode: String?
     private let loginMethod: AijiaLoginMethod
     private let cameraSelector: String
     private let deviceID = UUID().uuidString
@@ -203,6 +202,7 @@ final class AijiaAPI {
     private var hjqToken = ""
     private var passID = ""
     private var videoToken = ""
+    private var verificationSessionID = ""
     private var camera: AijiaCamera?
     private var userSelectedProvCode = ""
     private var userSelectedCityCode = ""
@@ -264,42 +264,54 @@ final class AijiaAPI {
         )
     }
 
+    func setVerificationCode(_ code: String) {
+        verificationCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func requestVerificationCode() async throws {
         logger.info("AUTH", "开始获取短信验证码 account=\(DiagnosticsLogger.maskPhone(phone))")
 
+        // The current official client uses the security-platform endpoint.
+        // The older authentication/sendMsg endpoint now requires a separate
+        // session and returns 5100000/5101001 when called directly.
         let body: [String: Any] = [
-            // These are the names used by the official login service. The
-            // second alias is accepted by older base-service deployments.
             "userPhone": phone,
-            "phoneNumber": phone,
-            "optType": "pwLoginNew",
+            "phoneBrand": phoneModel,
+            "HYMonitorDeviceId": deviceID,
+            "verifyCodeType": "TERMINAL_LOGIN",
         ]
-        do {
-            try await sendVerificationCode(to: Self.baseSendVerificationCodeURL, body: body)
-        } catch let error as AijiaAPIError {
-            let shouldTryProEndpoint: Bool
-            switch error {
-            case .server(_, _), .httpStatus(404):
-                shouldTryProEndpoint = true
-            default:
-                shouldTryProEndpoint = false
-            }
-            guard shouldTryProEndpoint else { throw error }
-            logger.warning("AUTH", "验证码普通接口未接受请求，尝试官方 Pro 接口")
-            try await sendVerificationCode(to: Self.baseSendVerificationCodeProURL, body: body)
-        }
+        let payload = try await sendVerificationCode(to: Self.baseSecurityVerificationCodeURL, body: body)
+        verificationSessionID = verificationSessionIdentifier(in: payload)
+        logger.debug(
+            "AUTH",
+            "官方验证码请求已接受 session=\(verificationSessionID.isEmpty ? "absent" : "present")"
+        )
         logger.info("AUTH", "短信验证码发送成功")
     }
 
-    private func sendVerificationCode(to endpoint: URL, body: [String: Any]) async throws {
+    private func sendVerificationCode(to endpoint: URL, body: [String: Any]) async throws -> [String: Any] {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         applyClientHeaders(to: &request)
+        request.setValue(phoneModel, forHTTPHeaderField: "phoneBrand")
+        request.setValue(deviceID, forHTTPHeaderField: "HYMonitorDeviceId")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let payload = try await requestJSON(request)
         try requireSuccess(in: payload, action: "获取验证码")
+        return payload
+    }
+
+    private func verificationSessionIdentifier(in payload: [String: Any]) -> String {
+        let data = payload["data"] as? [String: Any]
+        return stringValue(
+            data?["sessionId"] ??
+                data?["jsessionId"] ??
+                data?["JSESSIONID"] ??
+                payload["sessionId"] ??
+                payload["jsessionId"]
+        )
     }
 
     func openStream() async throws -> AijiaStream {
@@ -659,13 +671,20 @@ final class AijiaAPI {
             throw AijiaAPIError.server(action: "登录", message: "缺少短信验证码")
         }
 
-        // The official client exposes validCheckCode on the login service,
-        // while older base-service deployments use validateCode/phoneNumber.
-        // Login attempts are safe to retry because they do not send another SMS.
+        // The official login component calls this value validCheckCode. Keep
+        // the session returned by getVerifyCodeApp when the deployment sends
+        // one; the same AijiaAPI instance also retains the cookie jar.
+        var officialBody: [String: Any] = [
+            "userPhone": phone,
+            "validCheckCode": verificationCode,
+        ]
+        if !verificationSessionID.isEmpty {
+            officialBody["sessionId"] = verificationSessionID
+        }
         let candidates: [[String: Any]] = [
-            ["userAccount": phone, "validateCode": verificationCode, "authType": "10"],
-            ["phoneNumber": phone, "validateCode": verificationCode, "authType": "10"],
+            officialBody,
             ["userPhone": phone, "validCheckCode": verificationCode, "authType": "10"],
+            ["userAccount": phone, "validateCode": verificationCode, "authType": "10"],
         ]
 
         var lastError: Error?
