@@ -246,8 +246,8 @@ final class AijiaAPI {
     private var videoToken = ""
     private var verificationSessionID = ""
     private var camera: AijiaCamera?
-    private var userSelectedProvCode = Self.defaultProvCode
-    private var userSelectedCityCode = Self.defaultCityCode
+    private var userSelectedProvCode = "57"
+    private var userSelectedCityCode = "610400"
 
     private let phoneModel = aijiaHardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
