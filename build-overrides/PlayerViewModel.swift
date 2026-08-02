@@ -408,6 +408,11 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
         let queryKey = "\(ObjectIdentifier(client).hashValue):\(Int64(start.timeIntervalSince1970))"
         if !force {
+            if isReplay {
+                logger.debug("REPLAY", "回放期间忽略自动历史录像查询")
+                return
+            }
+
             if isLoadingRecordings, recordingsQueryKey == queryKey {
                 logger.debug("REPLAY", "忽略重复的历史录像查询（请求仍在进行）")
                 return
@@ -415,7 +420,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
             if recordingsQueryKey == queryKey,
                let completedAt = recordingsLastCompletedAt,
-               Date().timeIntervalSince(completedAt) < 3 {
+               Date().timeIntervalSince(completedAt) < 10 {
                 logger.debug("REPLAY", "忽略重复的历史录像查询（刚刚已完成）")
                 return
             }
