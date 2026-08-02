@@ -26,6 +26,22 @@ jobs:
           cp -f build-overrides/CredentialStore.swift iOS/AijiaDirect/AijiaDirect/Services/CredentialStore.swift
           cp -f build-overrides/ContentView.swift iOS/AijiaDirect/AijiaDirect/App/ContentView.swift
 
+      - name: Set incremental app version
+        working-directory: iOS/AijiaDirect
+        env:
+          ACTIONS_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          # Run 9 produced the existing 1.0 build. Every later build adds 0.1.
+          version_index=$((ACTIONS_RUN_NUMBER + 1))
+          version_major=$((version_index / 10))
+          version_minor=$((version_index % 10))
+          short_version="${version_major}.${version_minor}"
+          build_version="${ACTIONS_RUN_NUMBER}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${short_version}" AijiaDirect/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_version}" AijiaDirect/Info.plist
+          echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
+          echo "Using version ${short_version}, build ${build_version}"
+
       - name: Install CocoaPods and dependencies
         working-directory: iOS/AijiaDirect
         run: |
