@@ -186,6 +186,7 @@ private struct LoginView: View {
 private struct PlayerScreen: View {
     @ObservedObject var model: PlayerViewModel
     @State private var showingHistory = false
+    @State private var showingDiagnostics = false
 
     var body: some View {
         NavigationView {
@@ -263,7 +264,9 @@ private struct PlayerScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    NavigationLink(destination: DiagnosticsView(model: model)) {
+                    Button {
+                        showingDiagnostics = true
+                    } label: {
                         Image(systemName: "doc.text.magnifyingglass")
                     }
                     .accessibilityLabel("诊断日志")
@@ -287,6 +290,11 @@ private struct PlayerScreen: View {
                     }
                     .accessibilityLabel("更多操作")
                 }
+            }
+        }
+        .sheet(isPresented: $showingDiagnostics) {
+            NavigationView {
+                DiagnosticsView(model: model)
             }
         }
     }
@@ -708,6 +716,7 @@ private struct HistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate = Date()
     @State private var hasLoadedOnce = false
+    @State private var showingDiagnostics = false
 
     var body: some View {
         ScrollView {
@@ -814,7 +823,9 @@ private struct HistoryView: View {
                 .accessibilityLabel("返回播放")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: DiagnosticsView(model: model)) {
+                Button {
+                    showingDiagnostics = true
+                } label: {
                     Image(systemName: "doc.text.magnifyingglass")
                 }
                 .accessibilityLabel("诊断日志")
@@ -824,6 +835,11 @@ private struct HistoryView: View {
             guard !hasLoadedOnce, model.isAuthenticated else { return }
             hasLoadedOnce = true
             model.loadRecordings(for: selectedDate)
+        }
+        .sheet(isPresented: $showingDiagnostics) {
+            NavigationView {
+                DiagnosticsView(model: model)
+            }
         }
     }
 
@@ -839,6 +855,7 @@ private struct DiagnosticsView: View {
     // The diagnostics page only invokes commands on the model. It does not
     // need model-driven redraws while the replay clock is running.
     let model: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var logger = DiagnosticsLogger.shared
     @State private var diagnosticsURL: URL?
     @State private var showingShareSheet = false
@@ -892,6 +909,11 @@ private struct DiagnosticsView: View {
         .navigationTitle("诊断日志")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("完成") {
+                    dismiss()
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
@@ -944,4 +966,3 @@ private struct ActivityView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
-
