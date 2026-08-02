@@ -333,6 +333,17 @@ private enum AppVersionInfo {
 private enum ReleaseNotesCatalog {
     static let all: [ReleaseNote] = [
         ReleaseNote(
+            version: "回放诊断修复",
+            date: "2026-08-02",
+            title: "回放诊断隔离与查询去重",
+            details: [
+                "诊断日志改为独立弹窗，不再通过回放导航栈推入页面。",
+                "打开、刷新和关闭诊断页不会停止或重建当前回放播放器。",
+                "回放期间忽略页面生命周期触发的自动历史录像查询，避免重复请求和日志刷屏。",
+                "保留手动查询历史录像功能，并延长重复查询保护时间。"
+            ]
+        ),
+        ReleaseNote(
             version: "1.1",
             date: "2026-08-02",
             title: "回放与诊断导航修复",
