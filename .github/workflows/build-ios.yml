@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.8 seconds
-Output:
 name: Build AijiaDirect iOS IPA
 
 on:
@@ -51,4 +48,3 @@ jobs:
           name: AijiaDirect-unsigned-ipa
           path: iOS/AijiaDirect/AijiaDirect-unsigned.ipa
           retention-days: 7
-
