@@ -1,0 +1,54 @@
+Exit code: 0
+Wall time: 0.8 seconds
+Output:
+name: Build AijiaDirect iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "aijia-direct-source-posix.zip"
+      - ".github/workflows/build-ios.yml"
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack source tree
+        run: unzip -o -q aijia-direct-source-posix.zip
+
+      - name: Install CocoaPods and dependencies
+        working-directory: iOS/AijiaDirect
+        run: |
+          sudo gem install cocoapods --no-document
+          pod install --repo-update
+
+      - name: Build unsigned device archive
+        working-directory: iOS/AijiaDirect
+        run: |
+          rm -rf build Payload AijiaDirect-unsigned.ipa
+          xcodebuild \
+            -workspace AijiaDirect.xcworkspace \
+            -scheme AijiaDirect \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/AijiaDirect.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM= \
+            archive
+          mkdir Payload
+          cp -R build/AijiaDirect.xcarchive/Products/Applications/AijiaDirect.app Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload AijiaDirect-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AijiaDirect-unsigned-ipa
+          path: iOS/AijiaDirect/AijiaDirect-unsigned.ipa
+          retention-days: 7
+
