@@ -333,6 +333,17 @@ private enum AppVersionInfo {
 private enum ReleaseNotesCatalog {
     static let all: [ReleaseNote] = [
         ReleaseNote(
+            version: "验证码登录修复",
+            date: "2026-08-02",
+            title: "短信验证码会话流程",
+            details: [
+                "改用官方安全平台验证码接口 user/login/getVerifyCodeApp。",
+                "补齐官方要求的手机号、设备品牌、监测设备标识和 TERMINAL_LOGIN 参数。",
+                "发送验证码后复用同一网络会话登录，避免 session 校验失败。",
+                "验证码不会保存到钥匙串，也不会写入诊断日志。"
+            ]
+        ),
+        ReleaseNote(
             version: "回放诊断修复",
             date: "2026-08-02",
             title: "回放诊断隔离与查询去重",
