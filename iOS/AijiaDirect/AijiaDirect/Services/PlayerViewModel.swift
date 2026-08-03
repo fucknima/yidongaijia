@@ -3,11 +3,6 @@ import Foundation
 import MobileVLCKit
 import UIKit
 
-enum PlayerViewRole: Equatable {
-    case inline
-    case fullscreen
-}
-
 @MainActor
 final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
     @Published var phone = ""
@@ -49,9 +44,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
     private weak var drawable: UIView?
-    private weak var inlineDrawable: UIView?
-    private weak var fullscreenDrawable: UIView?
-    private var activePlayerViewRole: PlayerViewRole?
     private var keepAliveTimer: Timer?
     private var shouldPlay = false
     private var reconnectInFlight = false
@@ -732,36 +724,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayRateVerificationGeneration &+= 1
     }
 
-    func attach(to view: UIView, role: PlayerViewRole) {
-        switch role {
-        case .inline:
-            inlineDrawable = view
-        case .fullscreen:
-            fullscreenDrawable = view
-        }
-
-        // Keep the inline representable registered while the full-screen
-        // cover is presented, but never let SwiftUI updates from that hidden
-        // hierarchy steal VLC's drawable back from the full-screen view.
-        if role == .inline,
-           activePlayerViewRole == .fullscreen,
-           fullscreenDrawable != nil {
-            return
-        }
-
+    func attach(to view: UIView) {
         let viewChanged = drawable !== view
-        let roleChanged = activePlayerViewRole != role
-        if viewChanged || roleChanged {
-            logger.debug(
-                "PLAYER",
-                "播放器视图已挂载 role=\(role == .fullscreen ? "fullscreen" : "inline")"
-            )
+        if viewChanged {
+            logger.debug("PLAYER", "播放器视图已挂载")
         }
         drawable = view
-        activePlayerViewRole = role
-        guard viewChanged || roleChanged || player == nil else { return }
-
-        if (viewChanged || roleChanged),
+        if viewChanged,
            let currentPlayer = player,
            let currentStreamURL = streamURL,
            shouldPlay {
@@ -773,65 +742,30 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         preparePlayerIfPossible()
     }
 
-    func detach(from view: UIView, role: PlayerViewRole) {
-        switch role {
-        case .inline:
-            if inlineDrawable === view {
-                inlineDrawable = nil
-            }
-        case .fullscreen:
-            if fullscreenDrawable === view {
-                fullscreenDrawable = nil
-            }
-        }
+    func refreshDrawable(for view: UIView) {
+        guard drawable === view,
+              view.bounds.width > 1,
+              view.bounds.height > 1 else { return }
 
-        guard drawable === view, activePlayerViewRole == role else { return }
-
-        // The other representable remains alive during the cover transition.
-        // Hand the same VLC instance back to it instead of stopping playback
-        // and waiting for SwiftUI to create a new player later.
-        if role == .fullscreen, let fallback = inlineDrawable {
-            handoff(to: fallback, role: .inline)
-            return
+        // MobileVLCKit binds the video output to the UIView instance. Reapply
+        // the same drawable after SwiftUI/iOS finishes a rotation/layout pass;
+        // this is intentionally lightweight and does not recreate the media.
+        player?.drawable = view
+        if player == nil {
+            preparePlayerIfPossible()
         }
-        if role == .inline, let fallback = fullscreenDrawable {
-            handoff(to: fallback, role: .fullscreen)
-            return
-        }
+    }
 
-        logger.debug("PLAYER", "播放器视图已卸载，无可用输出层")
+    func detach(from view: UIView) {
+        guard drawable === view else { return }
+        logger.debug("PLAYER", "播放器视图已卸载")
         drawable = nil
-        activePlayerViewRole = nil
         cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         player?.delegate = nil
         player?.stop()
         player = nil
-    }
-
-    private func handoff(to view: UIView, role: PlayerViewRole) {
-        let viewChanged = drawable !== view
-        drawable = view
-        activePlayerViewRole = role
-        logger.debug(
-            "PLAYER",
-            "播放器输出权限已交给 role=\(role == .fullscreen ? "fullscreen" : "inline")"
-        )
-
-        guard viewChanged else {
-            player?.drawable = view
-            return
-        }
-
-        if let currentPlayer = player,
-           let currentStreamURL = streamURL,
-           shouldPlay {
-            rebindPlayer(currentPlayer, to: view, streamURL: currentStreamURL)
-        } else {
-            player?.drawable = view
-            preparePlayerIfPossible()
-        }
     }
 
     func refreshPlayerView() {

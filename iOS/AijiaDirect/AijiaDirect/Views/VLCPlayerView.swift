@@ -4,42 +4,47 @@ import UIKit
 
 struct VLCPlayerView: UIViewRepresentable {
     // PlayerScreen/HistoryView already observe the model. Observing it here
-    // causes every replay progress tick to call updateUIView and reconfigure
-    // the VLC player.
+    // would cause every replay progress tick to rebuild the representable.
     let model: PlayerViewModel
-    let role: PlayerViewRole
-
-    init(model: PlayerViewModel, role: PlayerViewRole = .inline) {
-        self.model = model
-        self.role = role
-    }
 
     final class Coordinator {
         weak var model: PlayerViewModel?
-        let role: PlayerViewRole
 
-        init(model: PlayerViewModel, role: PlayerViewRole) {
+        init(model: PlayerViewModel) {
             self.model = model
-            self.role = role
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model, role: role)
+        Coordinator(model: model)
     }
 
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+        let view = VLCVideoView()
         view.backgroundColor = .black
-        model.attach(to: view, role: role)
+        view.onLayout = { [weak model] view in
+            model?.refreshDrawable(for: view)
+        }
+        model.attach(to: view)
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        model.attach(to: uiView, role: role)
+        model.attach(to: uiView)
+        model.refreshDrawable(for: uiView)
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        coordinator.model?.detach(from: uiView, role: coordinator.role)
+        (uiView as? VLCVideoView)?.onLayout = nil
+        coordinator.model?.detach(from: uiView)
+    }
+}
+
+private final class VLCVideoView: UIView {
+    var onLayout: ((UIView) -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?(self)
     }
 }

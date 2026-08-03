@@ -151,10 +151,10 @@ private struct PlayerScreen: View {
                             .frame(width: 10, height: 10)
                     }
 
-                    // Keep the inline representable alive under the full-screen
-                    // cover. PlayerViewModel gives the full-screen view output
-                    // ownership while it is visible and hands it back on exit.
-                    if model.streamURL != nil, !model.isReplay {
+                    // Only one VLC drawable is mounted at a time. The inline
+                    // view is replaced by the full-screen view during the
+                    // cover transition, then attached again on dismissal.
+                    if !showingFullscreen, model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
@@ -255,7 +255,7 @@ private struct PlayerSurface: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VLCPlayerView(model: model, role: .inline)
+            VLCPlayerView(model: model)
                 .id(model.playerViewID)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .background(Color.black)
@@ -282,20 +282,23 @@ private struct FullscreenPlayerView: View {
             Color.black
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                VLCPlayerView(model: model, role: .fullscreen)
-                    .id(model.playerViewID)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black)
+            VLCPlayerView(model: model)
+                .id(model.playerViewID)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .ignoresSafeArea()
 
-                if model.isReplay {
+            if model.isReplay {
+                VStack {
+                    Spacer()
                     ReplayControls(model: model)
+                        .frame(maxWidth: .infinity)
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
 
             Button {
                 dismiss()
@@ -313,9 +316,6 @@ private struct FullscreenPlayerView: View {
             DispatchQueue.main.async {
                 ScreenOrientation.lockLandscape()
             }
-        }
-        .onDisappear {
-            ScreenOrientation.restorePortrait()
         }
     }
 }
@@ -604,19 +604,19 @@ private struct ReplayControls: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ReplaySeekBar(
+                Slider(
                     value: $sliderValue,
-                    enabled: !model.isLoading && model.replayDurationSecond > 0,
-                    onCommit: { value in
-                        model.seekReplay(to: value)
-                    },
+                    in: 0...1,
                     onEditingChanged: { editing in
+                        isEditing = editing
                         if editing {
                             sliderValue = Double(model.replayPosition)
+                        } else {
+                            model.seekReplay(to: sliderValue)
                         }
-                        isEditing = editing
                     }
                 )
+                .disabled(model.isLoading || model.replayDurationSecond <= 0)
 
                 HStack {
                     Label("内存卡回放", systemImage: "play.rectangle")
@@ -667,60 +667,6 @@ private struct ReplayControls: View {
             return String(format: "%.0fx", rate)
         }
         return String(format: "%.1fx", rate)
-    }
-}
-
-private struct ReplaySeekBar: View {
-    @Binding var value: Double
-    let enabled: Bool
-    let onCommit: (Double) -> Void
-    let onEditingChanged: (Bool) -> Void
-    @State private var isDragging = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let progress = max(0.0, min(1.0, value))
-            let thumbDiameter: CGFloat = 22
-            let thumbX = min(max(0, width * progress - thumbDiameter / 2), max(0, width - thumbDiameter))
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.secondary.opacity(0.25))
-                    .frame(height: 6)
-
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: max(0, width * progress), height: 6)
-
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: thumbDiameter, height: thumbDiameter)
-                    .offset(x: thumbX)
-            }
-            .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { gesture in
-                        guard enabled else { return }
-                        if !isDragging {
-                            isDragging = true
-                            onEditingChanged(true)
-                        }
-                        value = max(0.0, min(1.0, gesture.location.x / width))
-                    }
-                    .onEnded { gesture in
-                        guard enabled else { return }
-                        value = max(0.0, min(1.0, gesture.location.x / width))
-                        onCommit(value)
-                        isDragging = false
-                        onEditingChanged(false)
-                    }
-            )
-        }
-        .frame(height: 32)
-        .opacity(enabled ? 1 : 0.45)
     }
 }
 
@@ -806,9 +752,7 @@ private struct HistoryView: View {
                     }
                 }
 
-                // Keep the inline representable alive while the full-screen
-                // cover is presented so VLC can be handed back synchronously.
-                if model.isReplay, model.streamURL != nil {
+                if !showingFullscreen, model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
