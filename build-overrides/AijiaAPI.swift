@@ -41,7 +41,7 @@ struct AijiaStream {
     let camera: AijiaCamera
     let url: URL
 }
-: String, CaseIterable, Identifiable {
+enum AijiaPTZDirection: String, CaseIterable, Identifiable {
     case up
     case down
     case left
