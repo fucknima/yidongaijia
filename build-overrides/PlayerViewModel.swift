@@ -110,7 +110,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             cameraSelector: selectedCamera
         )
         api = client
-        shouldShowLogin = false
         shouldPlay = true
         isLoading = true
         isPlaying = false
