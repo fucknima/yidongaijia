@@ -131,6 +131,7 @@ private struct PlayerScreen: View {
     @ObservedObject var model: PlayerViewModel
     @State private var showingHistory = false
     @State private var showingDiagnostics = false
+    @State private var showingFullscreen = false
 
     var body: some View {
         NavigationView {
@@ -153,11 +154,9 @@ private struct PlayerScreen: View {
                     // HistoryView owns the replay player. Do not keep a
                     // second VLCPlayerView alive behind it.
                     if model.streamURL != nil && !model.isReplay {
-                        VLCPlayerView(model: model)
-                            .id(model.playerViewID)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        PlayerSurface(model: model) {
+                            showingFullscreen = true
+                        }
 
                         Button(role: .destructive) {
                             model.stop()
@@ -240,6 +239,112 @@ private struct PlayerScreen: View {
             NavigationView {
                 DiagnosticsView(model: model)
             }
+        }
+        .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
+            ScreenOrientation.restorePortrait()
+            model.refreshPlayerView()
+        }) {
+            FullscreenPlayerView(model: model)
+        }
+    }
+}
+
+private struct PlayerSurface: View {
+    @ObservedObject var model: PlayerViewModel
+    let onFullscreen: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VLCPlayerView(model: model)
+                .id(model.playerViewID)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            Button(action: onFullscreen) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.headline)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.black.opacity(0.7))
+            .accessibilityLabel("横屏全屏")
+            .padding(10)
+        }
+    }
+}
+
+private struct FullscreenPlayerView: View {
+    @ObservedObject var model: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                VLCPlayerView(model: model)
+                    .id(model.playerViewID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+
+                if model.isReplay {
+                    ReplayControls(model: model)
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                }
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.headline)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.black.opacity(0.7))
+            .accessibilityLabel("退出全屏")
+            .padding()
+        }
+        .statusBar(hidden: true)
+        .onAppear {
+            ScreenOrientation.lockLandscape()
+        }
+        .onDisappear {
+            ScreenOrientation.restorePortrait()
+        }
+    }
+}
+
+private enum ScreenOrientation {
+    static func lockLandscape() {
+        request(.landscape, deviceOrientation: .landscapeRight)
+    }
+
+    static func restorePortrait() {
+        request(.portrait, deviceOrientation: .portrait)
+    }
+
+    private static func request(
+        _ interfaceOrientations: UIInterfaceOrientationMask,
+        deviceOrientation: UIInterfaceOrientation
+    ) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            return
+        }
+
+        if #available(iOS 16.0, *) {
+            scene.windows.first(where: { $0.isKeyWindow })?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: interfaceOrientations)) { error in
+                DiagnosticsLogger.shared.warning(
+                    "UI",
+                    "屏幕方向切换失败 orientation=\(interfaceOrientations) error=\(error.localizedDescription)"
+                )
+            }
+        } else {
+            UIDevice.current.setValue(deviceOrientation.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 }
@@ -670,6 +775,7 @@ private struct HistoryView: View {
     @State private var selectedDate = Date()
     @State private var hasLoadedOnce = false
     @State private var showingDiagnostics = false
+    @State private var showingFullscreen = false
 
     var body: some View {
         ScrollView {
@@ -699,11 +805,9 @@ private struct HistoryView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
-                        VLCPlayerView(model: model)
-                            .id(model.playerViewID)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        PlayerSurface(model: model) {
+                            showingFullscreen = true
+                        }
                         ReplayControls(model: model)
                         Button(role: .destructive) {
                             model.stopReplay()
@@ -793,6 +897,12 @@ private struct HistoryView: View {
             NavigationView {
                 DiagnosticsView(model: model)
             }
+        }
+        .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
+            ScreenOrientation.restorePortrait()
+            model.refreshPlayerView()
+        }) {
+            FullscreenPlayerView(model: model)
         }
     }
 
