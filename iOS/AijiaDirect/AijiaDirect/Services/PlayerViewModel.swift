@@ -28,7 +28,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
 
-    private var api: AijiaAPI?
+    private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
     private var replayPlaybackStartTime: Int64?
     private var replaySeekTask: Task<Void, Never>?
@@ -54,9 +54,17 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var lastLoggedPlayerState = ""
     private var lastLoggedPlaybackSecond = -10
     private let logger = DiagnosticsLogger.shared
-    private let credentialStore = CredentialStore.shared
+    private let credentialStore: CredentialStoring
+    private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
 
-    override init() {
+    init(
+        credentialStore: CredentialStoring = CredentialStore.shared,
+        makeAPIClient: @escaping (String, String?, String) -> AijiaAPIClient = {
+            AijiaAPI(phone: $0, password: $1, cameraSelector: $2)
+        }
+    ) {
+        self.credentialStore = credentialStore
+        self.makeAPIClient = makeAPIClient
         super.init()
         if let savedLogin = credentialStore.load() {
             let autoConnectEnabled = credentialStore.isAutoConnectEnabled()
@@ -104,11 +112,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         let loginPassword = password
         let selectedCamera = cameraSelector
         let shouldRememberLogin = rememberLogin
-        let client = AijiaAPI(
-            phone: trimmedPhone,
-            password: loginPassword,
-            cameraSelector: selectedCamera
-        )
+        let client = makeAPIClient(trimmedPhone, loginPassword, selectedCamera)
         api = client
         shouldPlay = true
         isLoading = true
@@ -836,7 +840,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
     }
 
-    private func reconnect(client: AijiaAPI) async {
+    private func reconnect(client: AijiaAPIClient) async {
         guard !reconnectInFlight else { return }
         reconnectInFlight = true
         logger.warning("PLAYER", "保活失败，开始重连")

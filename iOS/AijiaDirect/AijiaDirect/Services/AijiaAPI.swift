@@ -18,6 +18,20 @@ struct AijiaCamera: Identifiable {
     let baseURL: URL
     var jwtoken: String
 
+    init(
+        id: String,
+        name: String,
+        macID: String,
+        baseURL: URL,
+        jwtoken: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.macID = macID
+        self.baseURL = baseURL
+        self.jwtoken = jwtoken
+    }
+
     init(_ raw: [String: Any]) throws {
         let macID = aijiaStringValue(raw["mac_id"] ?? raw["macId"])
         let fallbackID = aijiaStringValue(raw["device_id"] ?? raw["cmei"] ?? raw["sn"])
@@ -172,7 +186,18 @@ private func aijiaStringValue(_ value: Any?) -> String {
     return String(describing: value)
 }
 
-final class AijiaAPI {
+protocol AijiaAPIClient: AnyObject {
+    func openStream() async throws -> AijiaStream
+    func keepAlive() async throws
+    func controlPTZ(direction: AijiaPTZDirection) async throws
+    func queryRecordings(startTime: Int64, endTime: Int64) async throws -> [AijiaRecording]
+    func playRecording(at timestamp: Int64) async throws -> URL
+    func seekRecording(at timestamp: Int64) async throws
+    func keepReplayAlive() async throws
+    func stopReplay() async throws
+}
+
+final class AijiaAPI: AijiaAPIClient {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
@@ -258,6 +283,10 @@ final class AijiaAPI {
                 )
                 return AijiaStream(camera: selectedCamera, url: liveURL)
             } catch {
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                    logger.debug("API", "实时流请求已取消")
+                    throw CancellationError()
+                }
                 lastError = error
                 logger.error("API", "实时流尝试失败 attempt=\(attempt + 1) error=\(error.localizedDescription)")
                 if attempt == 0 {
@@ -288,10 +317,7 @@ final class AijiaAPI {
             parameters: parameters,
             path: endpoint.path
         )
-        logger.debug(
-            "REPLAY",
-            "playTFLive request startTime=\(timestamp) nonceDigits=\(parameters["nonce"]?.count ?? 0)"
-        )
+        logger.debug("API", "实时流保活请求 nonceDigits=\(parameters["nonce"]?.count ?? 0)")
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
