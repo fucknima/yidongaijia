@@ -163,7 +163,7 @@ enum AijiaSigning {
     static func normalized(_ value: String) -> String {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
-
+}
 
 private func aijiaStringValue(_ value: Any?) -> String {
     guard let value = value, !(value is NSNull) else { return "" }
@@ -211,10 +211,8 @@ final class AijiaAPI {
         self.password = password
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
-        // Official KSAdapterAFNetWorkThree reads JSESSIONID from the
-        // process-wide shared cookie storage. Keep the same jar so a
-        // send-code request and a later login request see the same session,
-        // even if the UI creates a new API wrapper.
+        // Keep the process-wide cookie jar so sequential login requests share
+        // the same server session, even if the UI creates a new API wrapper.
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
