@@ -235,7 +235,7 @@ private func aijiaStringValue(_ value: Any?) -> String {
 final class AijiaAPI {
     private static let baseCertificateURL = URL(string: "https://base.hjq.komect.com/base/app/certificate")!
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
-    private static let baseVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/sendSmsCode")!
+    private static let baseVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
     private static let officialIDMPAppID = "01010810"
     private static let officialSMSSourceID = "010108"
     // Verified from the official HYAppPasswordLoginService SMS request.
@@ -343,15 +343,16 @@ final class AijiaAPI {
     func requestVerificationCode() async throws {
         logger.info("AUTH", "requesting SMS verification code account=\(DiagnosticsLogger.maskPhone(phone))")
 
-        // This is the IDMP SMS branch used by the official login method:
-        // getValidateCodeForNewIMDPLoginWithPhoneNumber encrypts the phone
-        // and calls user/uniAuth/sendSmsCode. Keep it paired with
-        // appNewIDMPValicodeLoginWithUserPhone in loginBaseWithSMS().
+        // This is the ordinary login branch used by the official app:
+        // HYGetAppValidateCodeService sends the code through
+        // authentication/sendMsg with the phone and login metadata.
         try await prepareBaseSession()
 
-        let encryptedPhone = try AijiaSigning.officialEncryptedPhone(phone)
         let body: [String: Any] = [
-            "phoneNumber": encryptedPhone,
+            "phoneNumber": phone,
+            "type": "login",
+            "phoneBrand": Self.officialPhoneBrand,
+            "phoneModel": phoneModel,
         ]
         let (payload, response) = try await sendVerificationCode(to: Self.baseVerificationCodeURL, body: body)
         refreshBaseSessionCookies(from: response)
