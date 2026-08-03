@@ -2,7 +2,7 @@ import XCTest
 @testable import AijiaDirect
 
 final class AijiaDirectTests: XCTestCase {
-    func testVideoSignatureMatchesBridgeVector() {
+    func testVideoSignatureMatchesKnownVector() {
         let parameters = [
             "time": "2",
             "macId": "A",
@@ -63,13 +63,6 @@ final class AijiaDirectTests: XCTestCase {
     func testCameraSelectorNormalization() {
         XCTAssertEqual(AijiaSigning.normalized(" Camera-01 "), "camera01")
         XCTAssertEqual(AijiaSigning.normalized("摄像头 1"), "摄像头1")
-    }
-
-    func testOfficialSMSPhoneEncryptionVector() throws {
-        XCTAssertEqual(
-            try AijiaSigning.officialEncryptedPhone("15706030115"),
-            "185160AF37174B4C9A9DBD237443761A"
-        )
     }
 
     func testDiagnosticsHelpersDoNotExposeFullCredentials() {

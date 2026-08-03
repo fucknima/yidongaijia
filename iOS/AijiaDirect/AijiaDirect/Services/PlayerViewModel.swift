@@ -7,16 +7,12 @@ import UIKit
 final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
     @Published var phone = ""
     @Published var password = ""
-    @Published var loginMethod: AijiaLoginMethod = .password
-    @Published var verificationCode = ""
     @Published var cameraSelector = ""
     @Published var rememberLogin = true
     @Published private(set) var status = "请输入移动爱家账号"
     @Published private(set) var cameraName = ""
     @Published private(set) var streamURL: URL?
     @Published private(set) var isLoading = false
-    @Published private(set) var isSendingVerificationCode = false
-    @Published private(set) var verificationCountdown = 0
     @Published private(set) var isPlaying = false
     @Published private(set) var hasError = false
     @Published private(set) var hasSavedLogin = false
@@ -45,10 +41,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var recordingsQueryKey: String?
     private var recordingsLastCompletedAt: Date?
     private var playbackTask: Task<Void, Never>?
-    private var verificationRequestTask: Task<Void, Never>?
-    private var verificationCountdownTask: Task<Void, Never>?
-    private var verificationClient: AijiaAPI?
-    private var verificationClientPhone = ""
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
     private weak var drawable: UIView?
@@ -91,83 +83,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         start()
     }
 
-    func requestVerificationCode() {
-        guard loginMethod == .smsCode else { return }
-
-        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPhone.isEmpty else {
-            status = "请先填写手机号"
-            hasError = true
-            return
-        }
-        guard !isSendingVerificationCode, verificationCountdown == 0 else { return }
-
-        verificationRequestTask?.cancel()
-        let selectedCamera = cameraSelector
-        let client = AijiaAPI(phone: trimmedPhone, cameraSelector: selectedCamera)
-        verificationClient = client
-        verificationClientPhone = trimmedPhone
-        isSendingVerificationCode = true
-        hasError = false
-        status = "正在发送验证码…"
-        logger.info("AUTH", "用户请求短信验证码 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
-
-        let task = Task(priority: .userInitiated) { [weak self, client] in
-            do {
-                try await client.requestVerificationCode()
-                guard let self = self else { return }
-                self.verificationRequestTask = nil
-                self.isSendingVerificationCode = false
-                self.verificationCountdown = 60
-                self.startVerificationCountdown()
-                self.status = "验证码已发送，请查收短信"
-                self.hasError = false
-            } catch {
-                guard let self = self else { return }
-                self.verificationRequestTask = nil
-                if self.verificationClient === client {
-                    self.verificationClient = nil
-                    self.verificationClientPhone = ""
-                }
-                self.isSendingVerificationCode = false
-                self.hasError = true
-                self.status = "获取验证码失败：\(error.localizedDescription)"
-                self.logger.error("AUTH", "获取短信验证码失败 error=\(error.localizedDescription)")
-            }
-        }
-        verificationRequestTask = task
-    }
-
-    private func startVerificationCountdown() {
-        verificationCountdownTask?.cancel()
-        verificationCountdownTask = Task { [weak self] in
-            while let self = self, self.verificationCountdown > 0 {
-                do {
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                self.verificationCountdown = max(0, self.verificationCountdown - 1)
-            }
-            self?.verificationCountdownTask = nil
-        }
-    }
-
     func start() {
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedVerificationCode = verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        let credentialIsMissing: Bool
-        switch loginMethod {
-        case .password:
-            credentialIsMissing = password.isEmpty
-        case .smsCode:
-            credentialIsMissing = trimmedVerificationCode.isEmpty
-        }
+        let credentialIsMissing = password.isEmpty
         guard !trimmedPhone.isEmpty, !credentialIsMissing else {
-            status = loginMethod == .password ? "请填写手机号和密码" : "请填写手机号和短信验证码"
+            status = "请填写手机号和密码"
             hasError = true
-            logger.warning("AUTH", "登录被阻止，账号或登录凭据为空 method=\(loginMethod.rawValue)")
+            logger.warning("AUTH", "登录被阻止，账号或密码为空")
             return
         }
 
@@ -180,35 +102,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         resetReplayPlaybackState()
         stopPlaybackOnly()
         let loginPassword = password
-        let loginCode = trimmedVerificationCode
-        let selectedLoginMethod = loginMethod
         let selectedCamera = cameraSelector
         let shouldRememberLogin = rememberLogin
-        let client: AijiaAPI
-        switch selectedLoginMethod {
-        case .password:
-            client = AijiaAPI(
-                phone: trimmedPhone,
-                password: loginPassword,
-                cameraSelector: selectedCamera
-            )
-        case .smsCode:
-            if let pendingClient = verificationClient,
-               verificationClientPhone == trimmedPhone {
-                pendingClient.setVerificationCode(loginCode)
-                client = pendingClient
-                logger.info("AUTH", "复用验证码请求会话进行登录")
-            } else {
-                client = AijiaAPI(
-                    phone: trimmedPhone,
-                    verificationCode: loginCode,
-                    cameraSelector: selectedCamera
-                )
-                logger.warning("AUTH", "未找到同一验证码请求会话，使用新会话尝试登录")
-            }
-        }
+        let client = AijiaAPI(
+            phone: trimmedPhone,
+            password: loginPassword,
+            cameraSelector: selectedCamera
+        )
         api = client
-        shouldShowLogin = false
         shouldPlay = true
         isLoading = true
         isPlaying = false
@@ -233,34 +134,22 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 isAuthenticated = true
                 shouldShowLogin = false
 
-                if selectedLoginMethod == .password {
-                    if shouldRememberLogin {
-                        if credentialStore.save(
-                            phone: trimmedPhone,
-                            password: loginPassword,
-                            cameraSelector: selectedCamera
-                        ) {
-                            hasSavedLogin = true
-                            credentialStore.setAutoConnectEnabled(true)
-                            logger.info("AUTH", "登录信息已保存到钥匙串 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
-                        } else {
-                            logger.error("AUTH", "登录信息保存失败")
-                        }
+                if shouldRememberLogin {
+                    if credentialStore.save(
+                        phone: trimmedPhone,
+                        password: loginPassword,
+                        cameraSelector: selectedCamera
+                    ) {
+                        hasSavedLogin = true
+                        credentialStore.setAutoConnectEnabled(true)
+                        logger.info("AUTH", "登录信息已保存到钥匙串 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
                     } else {
-                        credentialStore.clear()
-                        hasSavedLogin = false
-                        logger.info("AUTH", "用户关闭记住登录，已清除本地登录信息")
+                        logger.error("AUTH", "登录信息保存失败")
                     }
                 } else {
-                    // Never persist the one-time SMS code. Existing password
-                    // credentials, if any, are left untouched.
-                    verificationCode = ""
-                    verificationCountdownTask?.cancel()
-                    verificationCountdownTask = nil
-                    verificationCountdown = 0
-                    verificationClient = nil
-                    verificationClientPhone = ""
-                    logger.info("AUTH", "验证码登录成功，未保存短信验证码")
+                    credentialStore.clear()
+                    hasSavedLogin = false
+                    logger.info("AUTH", "用户关闭记住登录，已清除本地登录信息")
                 }
 
                 preparePlayerIfPossible()
@@ -285,14 +174,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func stop() {
         logger.info("PLAYER", "停止播放")
-        verificationRequestTask?.cancel()
-        verificationRequestTask = nil
-        verificationClient = nil
-        verificationClientPhone = ""
-        verificationCountdownTask?.cancel()
-        verificationCountdownTask = nil
-        isSendingVerificationCode = false
-        verificationCountdown = 0
         shouldPlay = false
         reconnectInFlight = false
         _ = beginPlaybackOperation()
