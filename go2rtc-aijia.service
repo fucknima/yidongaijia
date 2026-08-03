@@ -1,0 +1,20 @@
+[Unit]
+Description=go2rtc for Mobile Aijia camera
+Wants=network-online.target
+After=network-online.target aijia-bridge.service
+
+[Service]
+Type=simple
+User=aijia-camera
+Group=aijia-camera
+WorkingDirectory=/opt/aijia-camera
+ExecStart=/opt/aijia-camera/go2rtc -config /etc/aijia-camera/go2rtc.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

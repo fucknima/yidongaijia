@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.deploy
+*.local
+.DS_Store
+iOS/AijiaDirect/Pods/
+iOS/AijiaDirect/build/
+iOS/AijiaDirect/Payload/
+iOS/AijiaDirect/*.ipa
+iOS/AijiaDirect/*.xcworkspace/xcuserdata/
