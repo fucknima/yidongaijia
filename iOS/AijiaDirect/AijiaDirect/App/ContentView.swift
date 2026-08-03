@@ -244,9 +244,6 @@ private struct PlayerScreen: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
-            DispatchQueue.main.async {
-                model.refreshPlayerView()
-            }
         }) {
             FullscreenPlayerView(model: model)
         }
@@ -320,6 +317,9 @@ private struct FullscreenPlayerView: View {
         }
         .onDisappear {
             ScreenOrientation.restorePortrait()
+            DispatchQueue.main.async {
+                model.refreshPlayerView()
+            }
         }
     }
 }
@@ -909,9 +909,6 @@ private struct HistoryView: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
-            DispatchQueue.main.async {
-                model.refreshPlayerView()
-            }
         }) {
             FullscreenPlayerView(model: model)
         }

@@ -28,8 +28,9 @@ struct VLCPlayerView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // PlayerViewModel owns the VLC lifecycle. Re-attaching from every
-        // SwiftUI update can restart replay timers and create a feedback loop.
+        // attach(to:) is idempotent for the current drawable and repairs the
+        // binding when SwiftUI reuses this view after fullscreen dismissal.
+        model.attach(to: uiView)
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
