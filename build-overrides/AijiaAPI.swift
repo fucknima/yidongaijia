@@ -184,8 +184,7 @@ final class AijiaAPI {
     private let phone: String
     private let password: String?
     private let cameraSelector: String
-    // The official client reads deviceUuid from keychain and uses
-    // identifierForVendor separately for idfv.
+    // Persist a stable device UUID for the base and video sessions.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
     private let session: URLSession
     private let logger = DiagnosticsLogger.shared
