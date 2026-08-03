@@ -153,7 +153,9 @@ private struct PlayerScreen: View {
 
                     // HistoryView owns the replay player. Do not keep a
                     // second VLCPlayerView alive behind it.
-                    if model.streamURL != nil && !model.isReplay {
+                    // The inline view is also removed while fullscreen is
+                    // presented so VLC has only one drawable at a time.
+                    if !showingFullscreen, model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
@@ -242,7 +244,6 @@ private struct PlayerScreen: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
-            model.refreshPlayerView()
         }) {
             FullscreenPlayerView(model: model)
         }
@@ -801,7 +802,7 @@ private struct HistoryView: View {
                     }
                 }
 
-                if model.isReplay, model.streamURL != nil {
+                if !showingFullscreen, model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
@@ -900,7 +901,6 @@ private struct HistoryView: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
-            model.refreshPlayerView()
         }) {
             FullscreenPlayerView(model: model)
         }

@@ -731,6 +731,24 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
         drawable = view
         guard viewChanged || player == nil else { return }
+
+        if viewChanged, let player = player, let streamURL = streamURL, shouldPlay {
+            cancelReplayRateVerification()
+            replayProgressTimer?.invalidate()
+            replayProgressTimer = nil
+            player.delegate = nil
+            player.stop()
+            player.drawable = view
+            player.media = VLCMedia(url: streamURL)
+            player.delegate = self
+            player.play()
+            if isReplay {
+                applyReplayRate(to: player)
+                scheduleReplayProgressTimer()
+            }
+            return
+        }
+
         player?.drawable = view
         preparePlayerIfPossible()
     }
@@ -745,12 +763,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         player?.delegate = nil
         player?.stop()
         player = nil
-    }
-
-    /// Forces SwiftUI to recreate the player surface after a temporary
-    /// fullscreen view has detached from the shared VLC player.
-    func refreshPlayerView() {
-        playerViewID = UUID()
     }
 
     private func preparePlayerIfPossible() {
