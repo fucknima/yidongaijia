@@ -36,7 +36,6 @@ private struct LoginView: View {
     private enum Field: Hashable {
         case phone
         case password
-        case verificationCode
         case camera
     }
 
@@ -59,60 +58,17 @@ private struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .phone)
 
-                            Picker("登录方式", selection: $model.loginMethod) {
-                                ForEach(AijiaLoginMethod.allCases) { method in
-                                    Text(method.title).tag(method)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-
-                            if model.loginMethod == .password {
-                                SecureField("移动爱家密码", text: $model.password)
-                                    .textContentType(.password)
-                                    .textFieldStyle(.roundedBorder)
-                                    .focused($focusedField, equals: .password)
-                            } else {
-                                HStack(spacing: 8) {
-                                    TextField("短信验证码", text: $model.verificationCode)
-                                        .textContentType(.oneTimeCode)
-                                        .keyboardType(.numberPad)
-                                        .textFieldStyle(.roundedBorder)
-                                        .focused($focusedField, equals: .verificationCode)
-
-                                    Button {
-                                        focusedField = nil
-                                        model.requestVerificationCode()
-                                    } label: {
-                                        Text(
-                                            model.isSendingVerificationCode
-                                                ? "发送中…"
-                                                : model.verificationCountdown > 0
-                                                    ? "\(model.verificationCountdown)s"
-                                                    : "获取验证码"
-                                        )
-                                        .frame(minWidth: 82)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(
-                                        model.isSendingVerificationCode ||
-                                        model.verificationCountdown > 0 ||
-                                        model.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    )
-                                }
-                            }
+                            SecureField("移动爱家密码", text: $model.password)
+                                .textContentType(.password)
+                                .textFieldStyle(.roundedBorder)
+                                .focused($focusedField, equals: .password)
 
                             TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .camera)
 
-                            if model.loginMethod == .password {
-                                Toggle("记住登录信息", isOn: $model.rememberLogin)
-                                    .font(.subheadline)
-                            } else {
-                                Text("短信验证码仅用于本次登录，不会保存。")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Toggle("记住登录信息", isOn: $model.rememberLogin)
+                                .font(.subheadline)
 
                             Button {
                                 focusedField = nil
@@ -123,13 +79,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(
-                                        model.isLoading
-                                            ? "正在登录…"
-                                            : model.loginMethod == .password
-                                                ? "登录并播放"
-                                                : "验证码登录并播放"
-                                    )
+                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -137,9 +87,7 @@ private struct LoginView: View {
                             .disabled(
                                 model.isLoading ||
                                 model.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                (model.loginMethod == .password
-                                    ? model.password.isEmpty
-                                    : model.verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                model.password.isEmpty
                             )
                         }
                     }
@@ -148,11 +96,7 @@ private struct LoginView: View {
                         StatusText(model: model)
                     }
 
-                    Text(
-                        model.loginMethod == .password
-                            ? "密码只保存在本机钥匙串，不会上传到其他服务器。"
-                            : "验证码登录使用官方短信验证服务，验证码不会写入日志或保存在本机。"
-                    )
+                    Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -333,17 +277,6 @@ private enum AppVersionInfo {
 private enum ReleaseNotesCatalog {
     static let all: [ReleaseNote] = [
         ReleaseNote(
-            version: "验证码登录修复",
-            date: "2026-08-02",
-            title: "短信验证码会话流程",
-            details: [
-                "改用官方安全平台验证码接口 user/login/getVerifyCodeApp。",
-                "补齐官方要求的手机号、设备品牌、监测设备标识和 TERMINAL_LOGIN 参数。",
-                "发送验证码后复用同一网络会话登录，避免 session 校验失败。",
-                "验证码不会保存到钥匙串，也不会写入诊断日志。"
-            ]
-        ),
-        ReleaseNote(
             version: "回放诊断修复",
             date: "2026-08-02",
             title: "回放诊断隔离与查询去重",
@@ -363,8 +296,6 @@ private enum ReleaseNotesCatalog {
                 "只有明确返回播放页或点击停止回放，才会结束回放会话。",
                 "修复回放页面导航过程中的播放器释放问题。",
                 "修复退出登录后重启 App 仍自动进入播放页的问题。",
-                "新增短信验证码登录，支持获取验证码、倒计时和验证码登录。",
-                "验证码仅用于当前登录，不会保存或写入诊断日志。",
                 "构建版本改为每次 GitHub Actions 构建自动递增 0.1。"
             ]
         ),
