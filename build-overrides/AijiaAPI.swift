@@ -201,7 +201,10 @@ final class AijiaAPI {
     private let hardwareModel = AijiaDeviceIdentity.hardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
 
-    private init(
+    // Keep a single initializer after removing SMS login. A same-label
+    // convenience initializer would resolve its self.init(...) call back to
+    // itself and compile into a non-returning self-loop on device.
+    init(
         phone: String,
         password: String?,
         cameraSelector: String
@@ -225,15 +228,6 @@ final class AijiaAPI {
             "初始化客户端 account=\(DiagnosticsLogger.maskPhone(phone)) cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
         )
     }
-
-    convenience init(phone: String, password: String, cameraSelector: String) {
-        self.init(
-            phone: phone,
-            password: password,
-            cameraSelector: cameraSelector
-        )
-    }
-
 
     func openStream() async throws -> AijiaStream {
         logger.info("API", "开始获取实时流")
