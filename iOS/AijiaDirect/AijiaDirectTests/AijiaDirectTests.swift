@@ -88,4 +88,220 @@ final class AijiaDirectTests: XCTestCase {
         XCTAssertFalse(summary.contains("secret-token"))
         XCTAssertFalse(summary.contains("signature=secret"))
     }
+
+    func testCredentialStoreKeepsExistingMetadataWhenPasswordWriteFails() {
+        let suiteName = "AijiaDirectTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("13800138000", forKey: "savedLogin.phone")
+        defaults.set("old-camera", forKey: "savedLogin.cameraSelector")
+        let passwordStore = StubPasswordStore(password: "old-password", writeResult: false)
+        let store = CredentialStore(defaults: defaults, passwordStore: passwordStore)
+
+        XCTAssertFalse(
+            store.save(
+                phone: "13900139000",
+                password: "new-password",
+                cameraSelector: "new-camera"
+            )
+        )
+        XCTAssertEqual(store.load()?.phone, "13800138000")
+        XCTAssertEqual(store.load()?.password, "old-password")
+        XCTAssertEqual(store.load()?.cameraSelector, "old-camera")
+    }
+
+    func testCredentialStoreCommitsMetadataAfterPasswordWriteSucceeds() {
+        let suiteName = "AijiaDirectTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let passwordStore = StubPasswordStore(writeResult: true)
+        let store = CredentialStore(defaults: defaults, passwordStore: passwordStore)
+
+        XCTAssertTrue(
+            store.save(
+                phone: "13800138000",
+                password: "password",
+                cameraSelector: "front-door"
+            )
+        )
+        XCTAssertEqual(store.load()?.phone, "13800138000")
+        XCTAssertEqual(store.load()?.password, "password")
+        XCTAssertEqual(store.load()?.cameraSelector, "front-door")
+    }
+
+    @MainActor
+    func testPlayerViewModelCanStartWithInjectedDependencies() async {
+        let credentialStore = StubCredentialStore()
+        let camera = AijiaCamera(
+            id: "camera-id",
+            name: "Front Door",
+            macID: "camera-mac",
+            baseURL: URL(string: "https://example.test")!,
+            jwtoken: "token"
+        )
+        let apiClient = StubAijiaAPIClient(
+            openStreamResult: .success(
+                AijiaStream(
+                    camera: camera,
+                    url: URL(string: "https://example.test/live.flv")!
+                )
+            )
+        )
+        let model = PlayerViewModel(
+            credentialStore: credentialStore,
+            makeAPIClient: { _, _, _ in apiClient }
+        )
+        model.phone = " 13800138000 "
+        model.password = "password"
+        model.cameraSelector = "front-door"
+
+        model.start()
+        await waitUntil { model.isAuthenticated || model.hasError }
+
+        XCTAssertEqual(apiClient.openStreamCallCount, 1)
+        XCTAssertTrue(model.isAuthenticated)
+        XCTAssertFalse(model.hasError)
+        XCTAssertEqual(model.cameraName, "Front Door")
+        XCTAssertEqual(model.streamURL, URL(string: "https://example.test/live.flv"))
+        XCTAssertEqual(credentialStore.savedLogin?.phone, "13800138000")
+        XCTAssertEqual(credentialStore.savedLogin?.cameraSelector, "front-door")
+        model.stop()
+    }
+
+    @MainActor
+    func testPlayerViewModelSurfacesInjectedClientFailure() async {
+        let credentialStore = StubCredentialStore()
+        let apiClient = StubAijiaAPIClient(openStreamResult: .failure(StubAPIError.failed))
+        let model = PlayerViewModel(
+            credentialStore: credentialStore,
+            makeAPIClient: { _, _, _ in apiClient }
+        )
+        model.phone = "13800138000"
+        model.password = "password"
+
+        model.start()
+        await waitUntil { !model.isLoading }
+
+        XCTAssertEqual(apiClient.openStreamCallCount, 1)
+        XCTAssertFalse(model.isAuthenticated)
+        XCTAssertTrue(model.hasError)
+        XCTAssertTrue(model.shouldShowLogin)
+        XCTAssertEqual(credentialStore.saveCallCount, 0)
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+}
+
+private final class StubPasswordStore: PasswordStoring {
+    private(set) var password: String?
+    var writeResult: Bool
+
+    init(password: String? = nil, writeResult: Bool) {
+        self.password = password
+        self.writeResult = writeResult
+    }
+
+    func read() -> String? {
+        password
+    }
+
+    func write(_ password: String) -> Bool {
+        guard writeResult else { return false }
+        self.password = password
+        return true
+    }
+
+    func clear() {
+        password = nil
+    }
+}
+
+private final class StubCredentialStore: CredentialStoring {
+    var loadedLogin: SavedAijiaLogin?
+    var autoConnectEnabled = true
+    var saveResult = true
+    private(set) var savedLogin: SavedAijiaLogin?
+    private(set) var saveCallCount = 0
+
+    func load() -> SavedAijiaLogin? {
+        loadedLogin
+    }
+
+    func isAutoConnectEnabled() -> Bool {
+        autoConnectEnabled
+    }
+
+    func setAutoConnectEnabled(_ enabled: Bool) {
+        autoConnectEnabled = enabled
+    }
+
+    func save(phone: String, password: String, cameraSelector: String) -> Bool {
+        saveCallCount += 1
+        guard saveResult else { return false }
+        let login = SavedAijiaLogin(
+            phone: phone,
+            password: password,
+            cameraSelector: cameraSelector
+        )
+        savedLogin = login
+        loadedLogin = login
+        return true
+    }
+
+    func clear() {
+        loadedLogin = nil
+        savedLogin = nil
+        autoConnectEnabled = false
+    }
+}
+
+private enum StubAPIError: LocalizedError {
+    case failed
+
+    var errorDescription: String? {
+        "stub failure"
+    }
+}
+
+private final class StubAijiaAPIClient: AijiaAPIClient {
+    let openStreamResult: Result<AijiaStream, Error>
+    private(set) var openStreamCallCount = 0
+
+    init(openStreamResult: Result<AijiaStream, Error>) {
+        self.openStreamResult = openStreamResult
+    }
+
+    func openStream() async throws -> AijiaStream {
+        openStreamCallCount += 1
+        return try openStreamResult.get()
+    }
+
+    func keepAlive() async throws {}
+
+    func controlPTZ(direction: AijiaPTZDirection) async throws {}
+
+    func queryRecordings(startTime: Int64, endTime: Int64) async throws -> [AijiaRecording] {
+        []
+    }
+
+    func playRecording(at timestamp: Int64) async throws -> URL {
+        URL(string: "https://example.test/replay.flv")!
+    }
+
+    func seekRecording(at timestamp: Int64) async throws {}
+
+    func keepReplayAlive() async throws {}
+
+    func stopReplay() async throws {}
 }
