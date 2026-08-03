@@ -244,6 +244,9 @@ private struct PlayerScreen: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
+            DispatchQueue.main.async {
+                model.refreshPlayerView()
+            }
         }) {
             FullscreenPlayerView(model: model)
         }
@@ -295,6 +298,8 @@ private struct FullscreenPlayerView: View {
                         .padding(.bottom, 8)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
 
             Button {
                 dismiss()
@@ -309,7 +314,9 @@ private struct FullscreenPlayerView: View {
         }
         .statusBar(hidden: true)
         .onAppear {
-            ScreenOrientation.lockLandscape()
+            DispatchQueue.main.async {
+                ScreenOrientation.lockLandscape()
+            }
         }
         .onDisappear {
             ScreenOrientation.restorePortrait()
@@ -330,6 +337,7 @@ private enum ScreenOrientation {
         _ interfaceOrientations: UIInterfaceOrientationMask,
         deviceOrientation: UIInterfaceOrientation
     ) {
+        AijiaDirectAppDelegate.supportedOrientations = interfaceOrientations
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
             return
@@ -901,6 +909,9 @@ private struct HistoryView: View {
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
+            DispatchQueue.main.async {
+                model.refreshPlayerView()
+            }
         }) {
             FullscreenPlayerView(model: model)
         }

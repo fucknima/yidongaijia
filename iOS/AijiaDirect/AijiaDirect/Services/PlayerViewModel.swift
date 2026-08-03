@@ -765,6 +765,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         player = nil
     }
 
+    func refreshPlayerView() {
+        playerViewID = UUID()
+    }
+
     private func preparePlayerIfPossible() {
         guard shouldPlay, let streamURL = streamURL, let drawable = drawable else { return }
 
