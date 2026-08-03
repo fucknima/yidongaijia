@@ -1,18 +1,11 @@
 import CryptoKit
 import Foundation
-import CommonCrypto
 
-#if canImport(UIKit)
-import UIKit
-#endif
 
 #if canImport(Security)
 import Security
 #endif
 
-#if canImport(SystemConfiguration)
-import SystemConfiguration
-#endif
 
 #if canImport(Darwin)
 import Darwin
@@ -48,22 +41,7 @@ struct AijiaStream {
     let camera: AijiaCamera
     let url: URL
 }
-
-enum AijiaLoginMethod: String, CaseIterable, Identifiable {
-    case password
-    case smsCode
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .password: return "密码登录"
-        case .smsCode: return "验证码登录"
-        }
-    }
-}
-
-enum AijiaPTZDirection: String, CaseIterable, Identifiable {
+: String, CaseIterable, Identifiable {
     case up
     case down
     case left
@@ -186,44 +164,6 @@ enum AijiaSigning {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
 
-    static func officialEncryptedPhone(_ value: String) throws -> String {
-        let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
-        let inputBytes = Array(value.utf8)
-        var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
-        let outputCapacity = outputBytes.count
-        var outputLength = 0
-
-        let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
-            inputBytes.withUnsafeBytes { inputBuffer in
-                outputBytes.withUnsafeMutableBytes { outputBuffer in
-                    CCCrypt(
-                        CCOperation(kCCEncrypt),
-                        CCAlgorithm(kCCAlgorithmAES),
-                        CCOptions(kCCOptionPKCS7Padding | kCCOptionECBMode),
-                        keyBuffer.baseAddress,
-                        kCCKeySizeAES128,
-                        nil,
-                        inputBuffer.baseAddress,
-                        inputBytes.count,
-                        outputBuffer.baseAddress,
-                        outputCapacity,
-                        &outputLength
-                    )
-                }
-            }
-        }
-
-        guard status == kCCSuccess else {
-            throw AijiaAPIError.server(
-                action: "SMS login",
-                message: "phone encryption failed code=\(status)"
-            )
-        }
-        return outputBytes[..<outputLength]
-            .map { String(format: "%02X", $0) }
-            .joined()
-    }
-}
 
 private func aijiaStringValue(_ value: Any?) -> String {
     guard let value = value, !(value is NSNull) else { return "" }
@@ -233,16 +173,9 @@ private func aijiaStringValue(_ value: Any?) -> String {
 }
 
 final class AijiaAPI {
-    private static let baseCertificateURL = URL(string: "https://base.hjq.komect.com/base/app/certificate")!
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
-    private static let baseVerificationCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
-    private static let officialIDMPAppID = "01010810"
-    private static let officialSMSSourceID = "010108"
-    // Verified from the official HYAppPasswordLoginService SMS request.
-    private static let officialPhoneBrand = "苹果"
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
-    private static let baseSMSLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
@@ -250,42 +183,32 @@ final class AijiaAPI {
 
     private let phone: String
     private let password: String?
-    private var verificationCode: String?
-    private let loginMethod: AijiaLoginMethod
     private let cameraSelector: String
     // The official client reads deviceUuid from keychain and uses
     // identifierForVendor separately for idfv.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
-    private let vendorID = AijiaDeviceIdentity.vendorIdentifier()
     private let session: URLSession
     private let logger = DiagnosticsLogger.shared
 
     private var hjqToken = ""
     private var passID = ""
     private var videoToken = ""
-    private var verificationSessionID = ""
-    private var baseSessionCookieHeader = ""
     private var camera: AijiaCamera?
     private var userSelectedProvCode = "57"
     private var userSelectedCityCode = "610400"
 
     // The base SDK uses the human-readable iphoneType (for example,
     // iPhone17,1 -> iPhone 16 Pro) while the video headers use hw.machine.
-    private let phoneModel = AijiaDeviceIdentity.phoneModel()
     private let hardwareModel = AijiaDeviceIdentity.hardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
 
     private init(
         phone: String,
         password: String?,
-        verificationCode: String?,
-        loginMethod: AijiaLoginMethod,
         cameraSelector: String
     ) {
         self.phone = phone
         self.password = password
-        self.verificationCode = verificationCode
-        self.loginMethod = loginMethod
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
         // Official KSAdapterAFNetWorkThree reads JSESSIONID from the
@@ -310,144 +233,10 @@ final class AijiaAPI {
         self.init(
             phone: phone,
             password: password,
-            verificationCode: nil,
-            loginMethod: .password,
             cameraSelector: cameraSelector
         )
     }
 
-    convenience init(phone: String, verificationCode: String, cameraSelector: String) {
-        self.init(
-            phone: phone,
-            password: nil,
-            verificationCode: verificationCode,
-            loginMethod: .smsCode,
-            cameraSelector: cameraSelector
-        )
-    }
-
-    convenience init(phone: String, cameraSelector: String) {
-        self.init(
-            phone: phone,
-            password: nil,
-            verificationCode: nil,
-            loginMethod: .smsCode,
-            cameraSelector: cameraSelector
-        )
-    }
-
-    func setVerificationCode(_ code: String) {
-        verificationCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func requestVerificationCode() async throws {
-        logger.info("AUTH", "requesting SMS verification code account=\(DiagnosticsLogger.maskPhone(phone))")
-
-        // This is the ordinary login branch used by the official app:
-        // HYGetAppValidateCodeService sends the code through
-        // authentication/sendMsg with the phone and login metadata.
-        try await prepareBaseSession()
-
-        let body: [String: Any] = [
-            "phoneNumber": phone,
-            "type": "login",
-            "phoneBrand": Self.officialPhoneBrand,
-            "phoneModel": phoneModel,
-        ]
-        let (payload, response) = try await sendVerificationCode(to: Self.baseVerificationCodeURL, body: body)
-        refreshBaseSessionCookies(from: response)
-
-        verificationSessionID = verificationSessionIdentifier(in: payload)
-        let sessionPresent = !verificationSessionID.isEmpty || !baseSessionCookieHeader.isEmpty
-        logger.debug(
-            "AUTH",
-            "SMS verification request accepted session=\(sessionPresent ? "present" : "absent") cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present") names=\(baseSessionCookieNames())"
-        )
-        logger.info("AUTH", "SMS verification code sent")
-    }
-
-    private func prepareBaseSession() async throws {
-        logger.debug("AUTH", "初始化基础认证会话")
-
-        var request = URLRequest(url: Self.baseCertificateURL)
-        request.httpMethod = "POST"
-        applyOfficialBaseHeaders(to: &request)
-        applyBaseSessionCookie(to: &request)
-        request.setValue("10.8.0", forHTTPHeaderField: "version")
-        request.setValue("WiFi", forHTTPHeaderField: "netStatus")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "appVersion": "10.8.0",
-            "version": 6,
-            "type": 11,
-        ])
-
-        let (payload, response) = try await requestJSONWithResponse(request)
-        try requireSuccess(in: payload, action: "初始化基础认证会话")
-        refreshBaseSessionCookies(from: response)
-        logger.debug(
-            "AUTH",
-            "基础认证会话初始化完成 cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present") names=\(baseSessionCookieNames())"
-        )
-    }
-
-    private func sendVerificationCode(
-        to endpoint: URL,
-        body: [String: Any]
-    ) async throws -> ([String: Any], HTTPURLResponse) {
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        applyOfficialBaseHeaders(to: &request)
-        applyBaseSessionCookie(to: &request)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (payload, response) = try await requestJSONWithResponse(request)
-        try requireSuccess(in: payload, action: "获取验证码")
-        return (payload, response)
-    }
-
-    private func applyOfficialBaseHeaders(to request: inout URLRequest) {
-        // These are the base-service headers seen in the official
-        // certificate capture. They are intentionally separate from the
-        // video-service headers (which use Version=6.11.1 and PhoneModel as
-        // the hardware identifier).
-        request.setValue("10.8.0", forHTTPHeaderField: "version")
-        request.setValue(userSelectedCityCode, forHTTPHeaderField: "userSelectedCityCode")
-        request.setValue("0", forHTTPHeaderField: "language")
-        request.setValue("1", forHTTPHeaderField: "userAppPattern")
-        request.setValue(
-            "zhihuiguanjia/10.8.0 (iPhone; iOS \(osVersion); Scale/3.00);UniApp;cmhiAiJia;HjqAppCategory/Phone",
-            forHTTPHeaderField: "User-Agent"
-        )
-        request.setValue("Phone", forHTTPHeaderField: "HjqAppCategory")
-        request.setValue(phoneModel, forHTTPHeaderField: "phoneType")
-        request.setValue(userSelectedProvCode, forHTTPHeaderField: "userSelectedProvCode")
-        request.setValue("1", forHTTPHeaderField: "OS")
-        // The official base capture carries an empty phoneNumber header;
-        // the phone itself is in the JSON body.
-        request.setValue("", forHTTPHeaderField: "phoneNumber")
-        request.setValue("WiFi", forHTTPHeaderField: "netStatus")
-        request.setValue(userSelectedProvCode, forHTTPHeaderField: "provCode")
-        request.setValue(userSelectedCityCode, forHTTPHeaderField: "cityCode")
-        request.setValue("*/*", forHTTPHeaderField: "Accept")
-        request.setValue("zh-Hans-CN;q=1, en-CN;q=0.9", forHTTPHeaderField: "Accept-Language")
-        request.setValue(osVersion, forHTTPHeaderField: "OSversion")
-        if !passID.isEmpty {
-            request.setValue(passID, forHTTPHeaderField: "passId")
-        }
-    }
-
-    private func verificationSessionIdentifier(in payload: [String: Any]) -> String {
-        let data = payload["data"] as? [String: Any]
-        return stringValue(
-            data?["sessionId"] ??
-                data?["jsessionId"] ??
-                data?["JSESSIONID"] ??
-                payload["sessionId"] ??
-                payload["jsessionId"]
-        )
-    }
 
     func openStream() async throws -> AijiaStream {
         logger.info("API", "开始获取实时流")
@@ -767,15 +556,6 @@ final class AijiaAPI {
         return url
     }
 
-    private func loginBase() async throws {
-        switch loginMethod {
-        case .password:
-            try await loginBaseWithPassword()
-        case .smsCode:
-            try await loginBaseWithSMS()
-        }
-    }
-
     private func loginBaseWithPassword() async throws {
         logger.info("API", "开始基础账号密码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
         guard let password = password, !password.isEmpty else {
@@ -797,57 +577,6 @@ final class AijiaAPI {
         let (payload, response) = try await requestJSONWithResponse(request)
         try completeBaseLogin(payload: payload, response: response, action: "登录")
         logger.info("API", "基础账号密码登录成功")
-    }
-
-    private func loginBaseWithSMS() async throws {
-        logger.info("API", "starting SMS login account=\(DiagnosticsLogger.maskPhone(phone))")
-        guard let verificationCode = verificationCode,
-              !verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AijiaAPIError.server(action: "Login", message: "missing SMS verification code")
-        }
-
-        let encryptedPhone = try AijiaSigning.officialEncryptedPhone(phone)
-        let body: [String: Any] = [
-            "phoneNumber": encryptedPhone,
-            "smsCode": verificationCode,
-            "appId": Self.officialIDMPAppID,
-            "appid": Self.officialIDMPAppID,
-            "provCode": userSelectedProvCode,
-            "deviceUuid": deviceID,
-            "sourceId": Self.officialSMSSourceID,
-            "idfa": "",
-            "channelId": "0",
-            "isWifi": AijiaDeviceIdentity.isWiFi ? "true" : "false",
-            "idfv": vendorID,
-            "phoneID": "",
-            "openUdid": "",
-            "phoneBrand": Self.officialPhoneBrand,
-            "phoneModel": phoneModel,
-            "loginType": "UNIAUTH_PASSWORD",
-        ]
-
-        if baseSessionCookieHeader.isEmpty {
-            baseSessionCookieHeader = currentBaseSessionCookieHeader()
-        }
-        if baseSessionCookieHeader.isEmpty {
-            try await prepareBaseSession()
-        }
-
-        var request = URLRequest(url: Self.baseSMSLoginURL)
-        request.httpMethod = "POST"
-        applyOfficialBaseHeaders(to: &request)
-        applyBaseSessionCookie(to: &request)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        logger.debug(
-            "AUTH",
-            "SMS login carrying base session cookie=\(baseSessionCookieHeader.isEmpty ? "absent" : "present") names=\(baseSessionCookieNames())"
-        )
-        let (payload, response) = try await requestJSONWithResponse(request)
-        refreshBaseSessionCookies(from: response)
-        try completeBaseLogin(payload: payload, response: response, action: "SMS login")
-        logger.info("API", "SMS login succeeded")
     }
 
     private func completeBaseLogin(
@@ -893,18 +622,6 @@ final class AijiaAPI {
         return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
     }
 
-    private func persistResponseCookies(from response: HTTPURLResponse) {
-        guard let url = response.url else { return }
-        var headers: [String: String] = [:]
-        for (key, value) in response.allHeaderFields {
-            headers[String(describing: key)] = String(describing: value)
-        }
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
-        for cookie in cookies {
-            HTTPCookieStorage.shared.setCookie(cookie)
-        }
-    }
-
     private func sessionCookieHeader(from response: HTTPURLResponse) -> String? {
         let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
         if let url = response.url {
@@ -936,76 +653,10 @@ final class AijiaAPI {
         return nil
     }
 
-    private func currentBaseSessionCookieHeader() -> String {
-        let urls = [Self.baseCertificateURL, Self.baseVerificationCodeURL, Self.baseSMSLoginURL]
-        // Official code enumerates HTTPCookieStorage.shared. Do not scope
-        // the lookup to a private URLSession cookie jar.
-        let storage = HTTPCookieStorage.shared
-        var seen = Set<String>()
-        var values: [String] = []
-        for url in urls {
-            for cookie in storage.cookies(for: url) ?? [] {
-                let key = "\(cookie.name)=\(cookie.value)"
-                if seen.insert(key).inserted {
-                    values.append(key)
-                }
-            }
-        }
-        return values.joined(separator: "; ")
-    }
-
-    private func refreshBaseSessionCookies(from response: HTTPURLResponse) {
-        persistResponseCookies(from: response)
-        let storedHeader = currentBaseSessionCookieHeader()
-        if !storedHeader.isEmpty {
-            baseSessionCookieHeader = storedHeader
-        } else if let responseHeader = sessionCookieHeader(from: response), !responseHeader.isEmpty {
-            baseSessionCookieHeader = responseHeader
-        }
-    }
-
-    private func baseSessionCookieNames() -> String {
-        let names = baseSessionCookieHeader
-            .split(separator: ";")
-            .compactMap { part -> String? in
-                let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
-                guard let first = pieces.first else { return nil }
-                return String(first).trimmingCharacters(in: .whitespaces)
-            }
-        return names.isEmpty ? "<none>" : names.joined(separator: ",")
-    }
-
-    private func cookieValue(named name: String, in header: String) -> String? {
-        for part in header.split(separator: ";") {
-            let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
-            guard pieces.count == 2 else { continue }
-            if String(pieces[0]).trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(name) == .orderedSame {
-                return String(pieces[1]).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return nil
-    }
-
-    private func applyBaseSessionCookie(to request: inout URLRequest) {
-        let cookieHeader = baseSessionCookieHeader.isEmpty
-            ? currentBaseSessionCookieHeader()
-            : baseSessionCookieHeader
-        guard !cookieHeader.isEmpty else {
-            return
-        }
-
-        // Keep the complete cookie jar. The official client does not reduce
-        // the session to one cookie when it creates the next request.
-        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
-        if let jsessionID = cookieValue(named: "JSESSIONID", in: cookieHeader) {
-            request.setValue(jsessionID, forHTTPHeaderField: "JSESSIONID")
-        }
-    }
-
     private func loginVideo() async throws {
         logger.info("API", "开始视频服务登录")
         if hjqToken.isEmpty || passID.isEmpty {
-            try await loginBase()
+            try await loginBaseWithPassword()
         }
 
         let timestamp = currentTimestamp()
@@ -1403,14 +1054,6 @@ private enum AijiaDeviceIdentity {
 #endif
     }
 
-    static func vendorIdentifier() -> String {
-#if canImport(UIKit)
-        return UIDevice.current.identifierForVendor?.uuidString ?? persistentDeviceUUID()
-#else
-        return persistentDeviceUUID()
-#endif
-    }
-
     static func hardwareModel() -> String {
 #if canImport(Darwin)
         var size: Int = 0
@@ -1428,47 +1071,6 @@ private enum AijiaDeviceIdentity {
 #endif
     }
 
-    static func phoneModel() -> String {
-        // This is the official HYCheckVersionService iphoneType mapping
-        // used by the base authentication request.
-        let mapping: [String: String] = [
-            "iPhone14,5": "iPhone 13",
-            "iPhone14,2": "iPhone 13 Pro",
-            "iPhone14,3": "iPhone 13 Pro Max",
-            "iPhone14,4": "iPhone 13 mini",
-            "iPhone15,2": "iPhone 14 Pro",
-            "iPhone15,3": "iPhone 14 Pro Max",
-            "iPhone15,4": "iPhone 15",
-            "iPhone15,5": "iPhone 15 Plus",
-            "iPhone16,1": "iPhone 15 Pro",
-            "iPhone16,2": "iPhone 15 Pro Max",
-            "iPhone17,1": "iPhone 16 Pro",
-            "iPhone17,2": "iPhone 16 Pro Max",
-            "iPhone17,3": "iPhone 16",
-            "iPhone17,4": "iPhone 16 Plus",
-            "iPhone17,5": "iPhone 16e"
-        ]
-        let hardware = hardwareModel()
-        return mapping[hardware] ?? hardware
-    }
-
-    static var isWiFi: Bool {
-#if canImport(SystemConfiguration)
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        let reachability = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                SCNetworkReachabilityCreateWithAddress(nil, $0)
-            }
-        }
-        var flags = SCNetworkReachabilityFlags()
-        if let reachability, SCNetworkReachabilityGetFlags(reachability, &flags) {
-            return flags.contains(.reachable) && !flags.contains(.isWWAN)
-        }
-#endif
-        return true
-    }
 }
 
 private func aijiaOperatingSystemVersion() -> String {
