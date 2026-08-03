@@ -943,7 +943,7 @@ final class AijiaAPI {
         var seen = Set<String>()
         var values: [String] = []
         for url in urls {
-            for cookie in storage?.cookies(for: url) ?? [] {
+            for cookie in storage.cookies(for: url) ?? [] {
                 let key = "\(cookie.name)=\(cookie.value)"
                 if seen.insert(key).inserted {
                     values.append(key)
