@@ -7,33 +7,39 @@ struct VLCPlayerView: UIViewRepresentable {
     // causes every replay progress tick to call updateUIView and reconfigure
     // the VLC player.
     let model: PlayerViewModel
+    let role: PlayerViewRole
+
+    init(model: PlayerViewModel, role: PlayerViewRole = .inline) {
+        self.model = model
+        self.role = role
+    }
 
     final class Coordinator {
         weak var model: PlayerViewModel?
+        let role: PlayerViewRole
 
-        init(model: PlayerViewModel) {
+        init(model: PlayerViewModel, role: PlayerViewRole) {
             self.model = model
+            self.role = role
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
+        Coordinator(model: model, role: role)
     }
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.backgroundColor = .black
-        model.attach(to: view)
+        model.attach(to: view, role: role)
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // attach(to:) is idempotent for the current drawable and repairs the
-        // binding when SwiftUI reuses this view after fullscreen dismissal.
-        model.attach(to: uiView)
+        model.attach(to: uiView, role: role)
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        coordinator.model?.detach(from: uiView)
+        coordinator.model?.detach(from: uiView, role: coordinator.role)
     }
 }

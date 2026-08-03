@@ -151,11 +151,10 @@ private struct PlayerScreen: View {
                             .frame(width: 10, height: 10)
                     }
 
-                    // HistoryView owns the replay player. Do not keep a
-                    // second VLCPlayerView alive behind it.
-                    // The inline view is also removed while fullscreen is
-                    // presented so VLC has only one drawable at a time.
-                    if !showingFullscreen, model.streamURL != nil, !model.isReplay {
+                    // Keep the inline representable alive under the full-screen
+                    // cover. PlayerViewModel gives the full-screen view output
+                    // ownership while it is visible and hands it back on exit.
+                    if model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
@@ -256,7 +255,7 @@ private struct PlayerSurface: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VLCPlayerView(model: model)
+            VLCPlayerView(model: model, role: .inline)
                 .id(model.playerViewID)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .background(Color.black)
@@ -284,7 +283,7 @@ private struct FullscreenPlayerView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                VLCPlayerView(model: model)
+                VLCPlayerView(model: model, role: .fullscreen)
                     .id(model.playerViewID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black)
@@ -317,9 +316,6 @@ private struct FullscreenPlayerView: View {
         }
         .onDisappear {
             ScreenOrientation.restorePortrait()
-            DispatchQueue.main.async {
-                model.refreshPlayerView()
-            }
         }
     }
 }
@@ -810,7 +806,9 @@ private struct HistoryView: View {
                     }
                 }
 
-                if !showingFullscreen, model.isReplay, model.streamURL != nil {
+                // Keep the inline representable alive while the full-screen
+                // cover is presented so VLC can be handed back synchronously.
+                if model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
