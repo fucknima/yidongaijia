@@ -2,37 +2,62 @@ import MobileVLCKit
 import SwiftUI
 import UIKit
 
+enum VLCPlayerSurfaceRole {
+    case inline
+    case fullscreen
+}
+
 struct VLCPlayerView: UIViewRepresentable {
     // PlayerScreen/HistoryView already observe the model. Observing it here
-    // causes every replay progress tick to call updateUIView and reconfigure
-    // the VLC player.
+    // would cause every replay progress tick to rebuild the representable.
     let model: PlayerViewModel
+    let role: VLCPlayerSurfaceRole
+
+    init(model: PlayerViewModel, role: VLCPlayerSurfaceRole = .inline) {
+        self.model = model
+        self.role = role
+    }
 
     final class Coordinator {
         weak var model: PlayerViewModel?
+        let role: VLCPlayerSurfaceRole
 
-        init(model: PlayerViewModel) {
+        init(model: PlayerViewModel, role: VLCPlayerSurfaceRole) {
             self.model = model
+            self.role = role
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model)
+        Coordinator(model: model, role: role)
     }
 
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        model.attach(to: view)
-        return view
+        let hostView = VLCPlayerHostView()
+        hostView.backgroundColor = .black
+        hostView.model = model
+        model.mountPlayerSurface(in: hostView, role: role)
+        return hostView
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // PlayerViewModel owns the VLC lifecycle. Re-attaching from every
-        // SwiftUI update can restart replay timers and create a feedback loop.
+        guard let hostView = uiView as? VLCPlayerHostView else { return }
+        hostView.model = model
+        model.mountPlayerSurface(in: hostView, role: role)
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        coordinator.model?.detach(from: uiView)
+        guard let hostView = uiView as? VLCPlayerHostView else { return }
+        coordinator.model?.unmountPlayerSurface(from: hostView, role: coordinator.role)
+        hostView.model = nil
+    }
+}
+
+private final class VLCPlayerHostView: UIView {
+    weak var model: PlayerViewModel?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        model?.layoutPlayerSurface(in: self)
     }
 }

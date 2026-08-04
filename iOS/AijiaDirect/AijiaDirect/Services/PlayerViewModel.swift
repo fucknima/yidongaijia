@@ -43,7 +43,17 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var playbackTask: Task<Void, Never>?
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
-    private weak var drawable: UIView?
+    private let drawable: UIView = {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .black
+        view.isOpaque = true
+        view.clipsToBounds = true
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        return view
+    }()
+    private weak var inlineSurfaceHost: UIView?
+    private weak var fullscreenSurfaceHost: UIView?
+    private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
     private var shouldPlay = false
     private var reconnectInFlight = false
@@ -607,9 +617,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         if let player = player {
             player.delegate = nil
             player.stop()
-            if let drawable = drawable {
-                player.drawable = drawable
-            }
+            player.drawable = drawable
             player.media = VLCMedia(url: streamURL)
             player.delegate = self
             player.play()
@@ -724,34 +732,84 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayRateVerificationGeneration &+= 1
     }
 
-    func attach(to view: UIView) {
-        let viewChanged = drawable !== view
-        if viewChanged {
-            logger.debug("PLAYER", "播放器视图已挂载")
+    func mountPlayerSurface(in hostView: UIView, role: VLCPlayerSurfaceRole) {
+        switch role {
+        case .inline:
+            inlineSurfaceHost = hostView
+        case .fullscreen:
+            fullscreenSurfaceHost = hostView
         }
-        drawable = view
-        guard viewChanged || player == nil else { return }
-        player?.drawable = view
-        preparePlayerIfPossible()
+        activatePreferredPlayerSurface()
     }
 
-    func detach(from view: UIView) {
-        guard drawable === view else { return }
-        logger.debug("PLAYER", "播放器视图已卸载")
-        drawable = nil
-        cancelReplayRateVerification()
-        replayProgressTimer?.invalidate()
-        replayProgressTimer = nil
-        player?.delegate = nil
-        player?.stop()
-        player = nil
+    func layoutPlayerSurface(in hostView: UIView) {
+        guard activeSurfaceHost === hostView, drawable.superview === hostView else { return }
+        let targetBounds = hostView.bounds
+        guard targetBounds.width > 1, targetBounds.height > 1 else { return }
+
+        let sizeChanged = drawable.bounds.size != targetBounds.size
+        if drawable.frame != targetBounds {
+            UIView.performWithoutAnimation {
+                drawable.frame = targetBounds
+                drawable.layoutIfNeeded()
+            }
+        }
+        if sizeChanged {
+            player?.drawable = drawable
+        }
+    }
+
+    func unmountPlayerSurface(from hostView: UIView, role: VLCPlayerSurfaceRole) {
+        switch role {
+        case .inline:
+            if inlineSurfaceHost === hostView {
+                inlineSurfaceHost = nil
+            }
+        case .fullscreen:
+            if fullscreenSurfaceHost === hostView {
+                fullscreenSurfaceHost = nil
+            }
+        }
+        activatePreferredPlayerSurface()
+    }
+
+    func refreshPlayerView() {
+        playerViewID = UUID()
+    }
+
+    private func activatePreferredPlayerSurface() {
+        guard let hostView = fullscreenSurfaceHost ?? inlineSurfaceHost else {
+            if activeSurfaceHost != nil {
+                drawable.removeFromSuperview()
+                activeSurfaceHost = nil
+                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运行")
+            }
+            return
+        }
+
+        let hostChanged = activeSurfaceHost !== hostView || drawable.superview !== hostView
+        activeSurfaceHost = hostView
+        if hostChanged {
+            drawable.removeFromSuperview()
+            drawable.frame = hostView.bounds
+            hostView.insertSubview(drawable, at: 0)
+            logger.debug("PLAYER", "播放器输出面已挂载到新宿主")
+
+            // The drawable UIView itself never changes. Reapplying that same
+            // instance lets VLC refresh its layout without reopening media.
+            player?.drawable = drawable
+        }
+
+        layoutPlayerSurface(in: hostView)
+        if player == nil {
+            preparePlayerIfPossible()
+        }
     }
 
     private func preparePlayerIfPossible() {
-        guard shouldPlay, let streamURL = streamURL, let drawable = drawable else { return }
+        guard shouldPlay, let streamURL = streamURL, activeSurfaceHost != nil else { return }
 
         if let player = player {
-            player.drawable = drawable
             if isReplay {
                 applyReplayRate(to: player)
                 scheduleReplayProgressTimer()
@@ -930,19 +988,19 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func resumeReplayAfterForeground() {
         guard isReplay, streamURL != nil else { return }
 
-        if let player = player, let drawable = drawable {
+        if let player = player {
             player.drawable = drawable
             player.play()
             applyReplayRate(to: player)
             isPlaying = true
             hasError = false
             scheduleReplayProgressTimer()
-        } else if drawable != nil {
+        } else if activeSurfaceHost != nil {
             preparePlayerIfPossible()
             isPlaying = player != nil
         } else {
             // SwiftUI may detach the representable while the app is backgrounded.
-            // Force a fresh view so attach(to:) can create a player with a valid drawable.
+            // Force a fresh host so mountPlayerSurface(in:role:) can resume output.
             playerViewID = UUID()
             isPlaying = false
             logger.debug("REPLAY", "回到前台时播放器视图已卸载，等待重新挂载")

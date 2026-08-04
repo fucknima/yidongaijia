@@ -131,6 +131,7 @@ private struct PlayerScreen: View {
     @ObservedObject var model: PlayerViewModel
     @State private var showingHistory = false
     @State private var showingDiagnostics = false
+    @State private var showingFullscreen = false
 
     var body: some View {
         NavigationView {
@@ -150,14 +151,12 @@ private struct PlayerScreen: View {
                             .frame(width: 10, height: 10)
                     }
 
-                    // HistoryView owns the replay player. Do not keep a
-                    // second VLCPlayerView alive behind it.
-                    if model.streamURL != nil && !model.isReplay {
-                        VLCPlayerView(model: model)
-                            .id(model.playerViewID)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    // SwiftUI may replace this host during presentation, but
+                    // the model keeps one persistent VLC drawable throughout.
+                    if model.streamURL != nil, !model.isReplay {
+                        PlayerSurface(model: model) {
+                            showingFullscreen = true
+                        }
 
                         Button(role: .destructive) {
                             model.stop()
@@ -240,6 +239,116 @@ private struct PlayerScreen: View {
             NavigationView {
                 DiagnosticsView(model: model)
             }
+        }
+        .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
+            ScreenOrientation.restorePortrait()
+        }) {
+            FullscreenPlayerView(model: model)
+        }
+    }
+}
+
+private struct PlayerSurface: View {
+    @ObservedObject var model: PlayerViewModel
+    let onFullscreen: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VLCPlayerView(model: model)
+                .id(model.playerViewID)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            Button(action: onFullscreen) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.headline)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.black.opacity(0.7))
+            .accessibilityLabel("横屏全屏")
+            .padding(10)
+        }
+    }
+}
+
+private struct FullscreenPlayerView: View {
+    @ObservedObject var model: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black
+                .ignoresSafeArea()
+
+            VLCPlayerView(model: model, role: .fullscreen)
+                .id(model.playerViewID)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .ignoresSafeArea()
+
+            if model.isReplay {
+                VStack {
+                    Spacer()
+                    ReplayControls(model: model, presentation: .fullscreen)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(2)
+            }
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.headline)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.black.opacity(0.7))
+            .accessibilityLabel("退出全屏")
+            .padding()
+        }
+        .statusBar(hidden: true)
+        .interactiveDismissDisabled()
+        .preferredColorScheme(.dark)
+        .onAppear {
+            DispatchQueue.main.async {
+                ScreenOrientation.lockLandscape()
+            }
+        }
+    }
+}
+
+private enum ScreenOrientation {
+    static func lockLandscape() {
+        request(.landscape, deviceOrientation: .landscapeRight)
+    }
+
+    static func restorePortrait() {
+        request(.portrait, deviceOrientation: .portrait)
+    }
+
+    private static func request(
+        _ interfaceOrientations: UIInterfaceOrientationMask,
+        deviceOrientation: UIInterfaceOrientation
+    ) {
+        AijiaDirectAppDelegate.supportedOrientations = interfaceOrientations
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            return
+        }
+
+        if #available(iOS 16.0, *) {
+            scene.windows.first(where: { $0.isKeyWindow })?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: interfaceOrientations)) { error in
+                DiagnosticsLogger.shared.warning(
+                    "UI",
+                    "屏幕方向切换失败 orientation=\(interfaceOrientations) error=\(error.localizedDescription)"
+                )
+            }
+        } else {
+            UIDevice.current.setValue(deviceOrientation.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 }
@@ -474,60 +583,46 @@ private struct UpdateLogView: View {
     }
 }
 
+private enum ReplayControlsPresentation: Equatable {
+    case inline
+    case fullscreen
+}
+
 private struct ReplayControls: View {
     @ObservedObject var model: PlayerViewModel
+    let presentation: ReplayControlsPresentation
     @State private var sliderValue = 0.0
     @State private var isEditing = false
 
     private let rates: [Float] = [0.5, 1.0, 2.0, 3.0, 5.0]
 
+    init(
+        model: PlayerViewModel,
+        presentation: ReplayControlsPresentation = .inline
+    ) {
+        self.model = model
+        self.presentation = presentation
+    }
+
     var body: some View {
-        GroupBox {
-            VStack(spacing: 8) {
-                HStack {
-                    Text(formatTime(model.replayCurrentSecond))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(formatTime(model.replayDurationSecond))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-
-                ReplaySeekBar(
-                    value: $sliderValue,
-                    enabled: !model.isLoading && model.replayDurationSecond > 0,
-                    onCommit: { value in
-                        model.seekReplay(to: value)
-                    },
-                    onEditingChanged: { editing in
-                        if editing {
-                            sliderValue = Double(model.replayPosition)
-                        }
-                        isEditing = editing
-                    }
-                )
-
-                HStack {
-                    Label("内存卡回放", systemImage: "play.rectangle")
-                        .font(.subheadline)
-                    Spacer()
-                    Menu {
-                        ForEach(rates, id: \.self) { rate in
-                            Button {
-                                model.setReplayRate(rate)
-                            } label: {
-                                if abs(model.replayRate - rate) < 0.01 {
-                                    Label(rateLabel(rate), systemImage: "checkmark")
-                                } else {
-                                    Text(rateLabel(rate))
-                                }
-                            }
-                        }
-                    } label: {
-                        Label(rateLabel(model.replayRate), systemImage: "speedometer")
-                    }
-                    .disabled(model.isLoading)
+        Group {
+            if presentation == .fullscreen {
+                controlsContent
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 10)
+                    .foregroundStyle(.white)
+                    .tint(.white)
+                    .background(
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.78)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            } else {
+                GroupBox {
+                    controlsContent
                 }
             }
         }
@@ -539,6 +634,60 @@ private struct ReplayControls: View {
                 sliderValue = Double(value)
             }
         }
+    }
+
+    private var controlsContent: some View {
+        VStack(spacing: presentation == .fullscreen ? 6 : 8) {
+            HStack {
+                Text(formatTime(model.replayCurrentSecond))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryForegroundColor)
+                Spacer()
+                Text(formatTime(model.replayDurationSecond))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryForegroundColor)
+            }
+
+            Slider(
+                value: $sliderValue,
+                in: 0...1,
+                onEditingChanged: { editing in
+                    isEditing = editing
+                    if editing {
+                        sliderValue = Double(model.replayPosition)
+                    } else {
+                        model.seekReplay(to: sliderValue)
+                    }
+                }
+            )
+            .disabled(model.isLoading || model.replayDurationSecond <= 0)
+
+            HStack {
+                Label("内存卡回放", systemImage: "play.rectangle")
+                    .font(.subheadline)
+                Spacer()
+                Menu {
+                    ForEach(rates, id: \.self) { rate in
+                        Button {
+                            model.setReplayRate(rate)
+                        } label: {
+                            if abs(model.replayRate - rate) < 0.01 {
+                                Label(rateLabel(rate), systemImage: "checkmark")
+                            } else {
+                                Text(rateLabel(rate))
+                            }
+                        }
+                    }
+                } label: {
+                    Label(rateLabel(model.replayRate), systemImage: "speedometer")
+                }
+                .disabled(model.isLoading)
+            }
+        }
+    }
+
+    private var secondaryForegroundColor: Color {
+        presentation == .fullscreen ? .white.opacity(0.78) : .secondary
     }
 
     private func formatTime(_ seconds: Int64) -> String {
@@ -557,60 +706,6 @@ private struct ReplayControls: View {
             return String(format: "%.0fx", rate)
         }
         return String(format: "%.1fx", rate)
-    }
-}
-
-private struct ReplaySeekBar: View {
-    @Binding var value: Double
-    let enabled: Bool
-    let onCommit: (Double) -> Void
-    let onEditingChanged: (Bool) -> Void
-    @State private var isDragging = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let progress = max(0.0, min(1.0, value))
-            let thumbDiameter: CGFloat = 22
-            let thumbX = min(max(0, width * progress - thumbDiameter / 2), max(0, width - thumbDiameter))
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.secondary.opacity(0.25))
-                    .frame(height: 6)
-
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: max(0, width * progress), height: 6)
-
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: thumbDiameter, height: thumbDiameter)
-                    .offset(x: thumbX)
-            }
-            .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { gesture in
-                        guard enabled else { return }
-                        if !isDragging {
-                            isDragging = true
-                            onEditingChanged(true)
-                        }
-                        value = max(0.0, min(1.0, gesture.location.x / width))
-                    }
-                    .onEnded { gesture in
-                        guard enabled else { return }
-                        value = max(0.0, min(1.0, gesture.location.x / width))
-                        onCommit(value)
-                        isDragging = false
-                        onEditingChanged(false)
-                    }
-            )
-        }
-        .frame(height: 32)
-        .opacity(enabled ? 1 : 0.45)
     }
 }
 
@@ -670,6 +765,7 @@ private struct HistoryView: View {
     @State private var selectedDate = Date()
     @State private var hasLoadedOnce = false
     @State private var showingDiagnostics = false
+    @State private var showingFullscreen = false
 
     var body: some View {
         ScrollView {
@@ -699,11 +795,9 @@ private struct HistoryView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
-                        VLCPlayerView(model: model)
-                            .id(model.playerViewID)
-                            .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        PlayerSurface(model: model) {
+                            showingFullscreen = true
+                        }
                         ReplayControls(model: model)
                         Button(role: .destructive) {
                             model.stopReplay()
@@ -793,6 +887,11 @@ private struct HistoryView: View {
             NavigationView {
                 DiagnosticsView(model: model)
             }
+        }
+        .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
+            ScreenOrientation.restorePortrait()
+        }) {
+            FullscreenPlayerView(model: model)
         }
     }
 
