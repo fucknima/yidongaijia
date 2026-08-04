@@ -1,6 +1,7 @@
 import ActivityKit
 import Foundation
 
+@available(iOS 16.1, *)
 struct RecordingDownloadAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var progress: Double
@@ -42,7 +43,7 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
         configuration.isDiscretionary = false
         configuration.waitsForConnectivity = true
         configuration.httpMaximumConnectionsPerHost = 6
-        configuration.networkServiceType = .responsiveData
+        configuration.networkServiceType = .video
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }
 

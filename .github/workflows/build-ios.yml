@@ -28,6 +28,8 @@ jobs:
           build_version="${ACTIONS_RUN_NUMBER}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${short_version}" AijiaDirect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_version}" AijiaDirect/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${short_version}" AijiaDirectDownloadWidget/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_version}" AijiaDirectDownloadWidget/Info.plist
           echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
           echo "Using version ${short_version}, build ${build_version}"
 
