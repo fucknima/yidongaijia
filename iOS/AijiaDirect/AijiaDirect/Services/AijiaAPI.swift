@@ -238,15 +238,18 @@ final class AijiaAPI: AijiaAPIClient {
         self.password = password
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
-        // Keep the process-wide cookie jar so sequential login requests share
-        // the same server session, even if the UI creates a new API wrapper.
-        let configuration = URLSessionConfiguration.default
+        // Authentication state belongs to this client instance. A shared,
+        // persistent cookie jar can otherwise carry one account's session into
+        // a later login (or leave it on disk after the user logs out). The API
+        // explicitly forwards the base-login token to the video service, so it
+        // does not need URLSession to retain cookies between requests.
+        let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
-        configuration.httpCookieStorage = HTTPCookieStorage.shared
-        configuration.httpShouldSetCookies = true
-        configuration.httpCookieAcceptPolicy = .always
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
         self.session = URLSession(configuration: configuration)
         logger.info(
             "API",
@@ -633,10 +636,7 @@ final class AijiaAPI: AijiaAPIClient {
             }
         }
 
-        let storage = HTTPCookieStorage.shared
-        let cookies = response.url.flatMap { storage.cookies(for: $0) } ?? []
-        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
-        return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
+        return ""
     }
 
     private func sessionCookieHeader(from response: HTTPURLResponse) -> String? {
@@ -647,7 +647,8 @@ final class AijiaAPI: AijiaAPIClient {
                 fields[String(describing: key)] = String(describing: value)
             }
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-            if let cookie = cookies.first(where: { preferredNames.contains($0.name.lowercased()) }) {
+            if let cookie = cookies.first(where: { preferredNames.contains($0.name.lowercased()) })
+                ?? cookies.first {
                 return "\(cookie.name)=\(cookie.value)"
             }
         }
@@ -655,6 +656,7 @@ final class AijiaAPI: AijiaAPIClient {
         guard let rawHeader = response.value(forHTTPHeaderField: "Set-Cookie") else {
             return nil
         }
+        var firstCookie: String?
         for part in rawHeader.split(separator: ",") {
             guard let first = part.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first else {
                 continue
@@ -663,11 +665,14 @@ final class AijiaAPI: AijiaAPIClient {
             guard pieces.count == 2 else { continue }
             let name = String(pieces[0]).trimmingCharacters(in: .whitespaces)
             let value = String(pieces[1]).trimmingCharacters(in: .whitespaces)
+            if firstCookie == nil, !name.isEmpty, !value.isEmpty {
+                firstCookie = "\(name)=\(value)"
+            }
             if preferredNames.contains(name.lowercased()), !value.isEmpty {
                 return "\(name)=\(value)"
             }
         }
-        return nil
+        return firstCookie
     }
 
     private func loginVideo() async throws {
