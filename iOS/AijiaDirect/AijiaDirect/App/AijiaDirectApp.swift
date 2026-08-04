@@ -10,6 +10,18 @@ final class AijiaDirectAppDelegate: NSObject, UIApplicationDelegate {
     ) -> UIInterfaceOrientationMask {
         Self.supportedOrientations
     }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard identifier == "com.aijiadirect.recording-download" else {
+            completionHandler()
+            return
+        }
+        RecordingDownloadManager.backgroundEventsCompletionHandler = completionHandler
+    }
 }
 
 @MainActor
