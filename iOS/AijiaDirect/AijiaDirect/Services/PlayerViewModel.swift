@@ -31,7 +31,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
     @Published private(set) var streamSpeedText = "0 KB/s"
-    let downloadManager = RecordingDownloadManager()
+    let downloadManager = RecordingDownloadManager.shared
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -488,8 +488,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     func downloadRecording(_ recording: AijiaRecording) {
-        guard let client = api, isAuthenticated, !downloadManager.isDownloading else {
-            status = downloadManager.isDownloading ? "已有录像正在下载" : "请先连接摄像头"
+        guard let client = api, isAuthenticated, !downloadManager.isDownloading, !isLoading else {
+            status = (downloadManager.isDownloading || isLoading) ? "已有操作正在进行，请稍候" : "请先连接摄像头"
             hasError = true
             return
         }

@@ -877,7 +877,10 @@ private struct HistoryView: View {
                                     Image(systemName: model.downloadManager.recordingID == recording.id ? "xmark.circle" : "arrow.down.circle")
                                         .font(.title2)
                                 }
-                                .disabled(model.downloadManager.isDownloading && model.downloadManager.recordingID != recording.id)
+                                .disabled(
+                                    model.isLoading ||
+                                    (model.downloadManager.isDownloading && model.downloadManager.recordingID != recording.id)
+                                )
                                 .accessibilityLabel(model.downloadManager.recordingID == recording.id ? "取消下载" : "下载此录像到手机")
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)

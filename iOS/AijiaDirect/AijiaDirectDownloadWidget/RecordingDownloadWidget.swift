@@ -2,6 +2,7 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+@available(iOS 16.1, *)
 struct RecordingDownloadAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var progress: Double

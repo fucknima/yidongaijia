@@ -1,6 +1,7 @@
 import ActivityKit
 import Foundation
 
+@available(iOS 16.1, *)
 struct RecordingDownloadAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var progress: Double
@@ -14,6 +15,7 @@ struct RecordingDownloadAttributes: ActivityAttributes {
 
 @MainActor
 final class RecordingDownloadManager: NSObject, ObservableObject {
+    static let shared = RecordingDownloadManager()
     @Published private(set) var recordingID: String?
     @Published private(set) var progress = 0.0
     @Published private(set) var downloadedBytes: Int64 = 0
@@ -33,12 +35,36 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
     private var lastSpeedSample: (date: Date, bytes: Int64)?
     nonisolated(unsafe) static var backgroundEventsCompletionHandler: (() -> Void)?
 
-    override init() {
+    private override init() {
         super.init()
         let configuration = URLSessionConfiguration.background(withIdentifier: "com.aijiadirect.recording-download")
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        restoreBackgroundTaskIfNeeded()
+    }
+
+    private func restoreBackgroundTaskIfNeeded() {
+        session.getAllTasks { [weak self] tasks in
+            guard let downloadTask = tasks
+                .compactMap({ $0 as? URLSessionDownloadTask })
+                .first(where: { $0.state == .running || $0.state == .suspended }) else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.task == nil else { return }
+                self.task = downloadTask
+                self.recordingID = "background-\(downloadTask.taskIdentifier)"
+                self.downloadedBytes = downloadTask.countOfBytesReceived
+                self.progress = downloadTask.countOfBytesExpectedToReceive > 0
+                    ? min(0.99, Double(downloadTask.countOfBytesReceived) / Double(downloadTask.countOfBytesExpectedToReceive))
+                    : 0
+                self.stateText = "后台下载继续中"
+                self.startedAt = Date()
+                self.lastSpeedSample = (Date(), downloadTask.countOfBytesReceived)
+                if #available(iOS 16.1, *) {
+                    self.activity = Activity<RecordingDownloadAttributes>.activities.first
+                }
+            }
+        }
     }
 
     func start(url: URL, recording: AijiaRecording, completion: @escaping (Result<URL, Error>) -> Void) {
@@ -180,7 +206,15 @@ extension RecordingDownloadManager: URLSessionDownloadDelegate {
         totalBytesExpectedToWrite: Int64
     ) {
         Task { @MainActor [weak self] in
-            guard let self, downloadTask === self.task else { return }
+            guard let self else { return }
+            // A background session can deliver delegate callbacks immediately
+            // after relaunch, before getAllTasks has restored our task pointer.
+            if self.task == nil {
+                self.task = downloadTask
+                self.recordingID = "background-\(downloadTask.taskIdentifier)"
+                self.stateText = "后台下载继续中"
+            }
+            guard downloadTask === self.task else { return }
             self.downloadedBytes = totalBytesWritten
             let now = Date()
             if let sample = self.lastSpeedSample {
