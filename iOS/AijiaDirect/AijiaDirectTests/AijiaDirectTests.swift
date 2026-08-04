@@ -349,6 +349,10 @@ private final class StubAijiaAPIClient: AijiaAPIClient {
         URL(string: "https://example.test/replay.flv")!
     }
 
+    func prepareRecordingDownload(at timestamp: Int64) async throws -> URL {
+        URL(string: "https://example.test/download.flv")!
+    }
+
     func seekRecording(at timestamp: Int64) async throws {}
 
     func keepReplayAlive() async throws {}
