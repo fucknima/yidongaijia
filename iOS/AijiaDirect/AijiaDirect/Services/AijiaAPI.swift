@@ -192,6 +192,7 @@ protocol AijiaAPIClient: AnyObject {
     func controlPTZ(direction: AijiaPTZDirection) async throws
     func queryRecordings(startTime: Int64, endTime: Int64) async throws -> [AijiaRecording]
     func playRecording(at timestamp: Int64) async throws -> URL
+    func prepareRecordingDownload(at timestamp: Int64) async throws -> URL
     func seekRecording(at timestamp: Int64) async throws
     func keepReplayAlive() async throws
     func stopReplay() async throws
@@ -421,6 +422,23 @@ final class AijiaAPI: AijiaAPIClient {
             _ = try await refreshCameraSession()
             return try await playRecordingOnce(at: timestamp)
         }
+    }
+
+    /// Authenticates a dedicated client before allocating a TF transfer. This
+    /// keeps downloading isolated from the client currently driving replay.
+    func prepareRecordingDownload(at timestamp: Int64) async throws -> URL {
+        if videoToken.isEmpty {
+            try await loginVideo()
+        }
+        if camera == nil {
+            camera = try await selectCamera(from: cameraList())
+        }
+        guard var selectedCamera = camera else { throw AijiaAPIError.emptyCameraList }
+        if selectedCamera.jwtoken.isEmpty {
+            selectedCamera.jwtoken = try await deviceToken(for: selectedCamera)
+            camera = selectedCamera
+        }
+        return try await playRecording(at: timestamp)
     }
 
     private func playRecordingOnce(at timestamp: Int64) async throws -> URL {

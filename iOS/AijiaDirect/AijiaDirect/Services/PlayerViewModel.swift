@@ -2,6 +2,9 @@ import Combine
 import Foundation
 import MobileVLCKit
 import UIKit
+#if canImport(Darwin)
+import Darwin
+#endif
 
 @MainActor
 final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
@@ -27,6 +30,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
+    @Published private(set) var streamSpeedText = "0 KB/s"
+    @Published private(set) var preparingDownloadID: String?
+    let downloadManager = RecordingDownloadManager()
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -41,6 +47,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var recordingsQueryKey: String?
     private var recordingsLastCompletedAt: Date?
     private var playbackTask: Task<Void, Never>?
+    private var downloadPreparationTask: Task<Void, Never>?
+    private var downloadRangeStopTask: Task<Void, Never>?
+    private var downloadClient: AijiaAPIClient?
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
     private let drawable: UIView = {
@@ -55,6 +64,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private weak var fullscreenSurfaceHost: UIView?
     private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
+    private var speedTimer: Timer?
+    private var lastNetworkSample: (date: Date, bytes: UInt64)?
     private var shouldPlay = false
     private var reconnectInFlight = false
     private var foregroundRefreshInFlight = false
@@ -66,6 +77,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
+    private var downloadObserver: AnyCancellable?
 
     init(
         credentialStore: CredentialStoring = CredentialStore.shared,
@@ -76,6 +88,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         self.credentialStore = credentialStore
         self.makeAPIClient = makeAPIClient
         super.init()
+        downloadObserver = downloadManager.objectWillChange.sink { [weak self] _ in
+            // Forward after the manager has committed its @Published value;
+            // synchronous forwarding can redraw with stale progress on cancel.
+            DispatchQueue.main.async {
+                self?.objectWillChange.send()
+            }
+        }
         if let savedLogin = credentialStore.load() {
             let autoConnectEnabled = credentialStore.isAutoConnectEnabled()
             phone = savedLogin.phone
@@ -248,6 +267,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         didEnterBackgroundWhilePlaying = true
         hasError = false
         if isReplay {
+            keepAliveTimer?.invalidate()
+            keepAliveTimer = nil
             cancelReplayRateVerification()
             replayProgressTimer?.invalidate()
             replayProgressTimer = nil
@@ -269,9 +290,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
         guard shouldPlay, isAuthenticated else { return }
         if isReplay {
-            logger.info("REPLAY", "应用回到前台，保留历史回放进度")
-            status = "已回到前台，继续历史回放"
-            resumeReplayAfterForeground()
+            logger.info("REPLAY", "应用回到前台，重新建立历史回放传输")
+            status = "已回到前台，正在恢复历史回放…"
+            reopenReplayAfterInterruption()
             return
         }
 
@@ -474,6 +495,82 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         playbackTask = task
     }
 
+    func downloadRecording(_ recording: AijiaRecording) {
+        guard isAuthenticated, !downloadManager.isDownloading, preparingDownloadID == nil else {
+            status = (downloadManager.isDownloading || preparingDownloadID != nil) ? "已有录像正在下载" : "请先连接摄像头"
+            hasError = true
+            return
+        }
+        let client = makeAPIClient(phone.trimmingCharacters(in: .whitespacesAndNewlines), password, cameraSelector)
+        downloadClient = client
+        preparingDownloadID = recording.id
+        hasError = false
+        status = "正在准备录像下载…"
+        logger.info("DOWNLOAD", "准备下载录像 start=\(recording.startTime) end=\(recording.endTime)")
+
+        downloadPreparationTask = Task(priority: .userInitiated) { [weak self, client] in
+            do {
+                let url = try await client.prepareRecordingDownload(at: recording.playbackStartTime)
+                try Task.checkCancellation()
+                guard let self, self.downloadClient === client, self.isAuthenticated else { return }
+                self.preparingDownloadID = nil
+                self.downloadPreparationTask = nil
+                self.status = "录像正在下载，可在灵动岛查看进度"
+                self.downloadManager.start(url: url, recording: recording) { [weak self, client] result in
+                    guard let self else { return }
+                    self.downloadRangeStopTask?.cancel()
+                    self.downloadRangeStopTask = nil
+                    Task { try? await client.stopReplay() }
+                    self.downloadClient = nil
+                    switch result {
+                    case let .success(url):
+                        self.status = "下载完成：\(url.lastPathComponent)（可在“文件”App 查看）"
+                        self.hasError = false
+                        self.logger.info("DOWNLOAD", "录像下载完成 file=\(url.lastPathComponent)")
+                    case let .failure(error):
+                        self.status = "录像下载失败：\(error.localizedDescription)"
+                        self.hasError = true
+                        self.logger.error("DOWNLOAD", "录像下载失败 error=\(error.localizedDescription)")
+                    }
+                }
+                let selectedDuration = max(1, recording.endTime - recording.startTime)
+                self.downloadRangeStopTask = Task { [weak self, client] in
+                    try? await Task.sleep(nanoseconds: UInt64(selectedDuration) * 1_000_000_000)
+                    guard !Task.isCancelled, self?.downloadClient === client else { return }
+                    // Closing the dedicated camera transfer produces a clean
+                    // EOF for the background download at the selected end.
+                    try? await client.stopReplay()
+                }
+            } catch is CancellationError {
+                self?.logger.info("DOWNLOAD", "下载准备已取消")
+            } catch {
+                guard let self, self.downloadClient === client else { return }
+                self.preparingDownloadID = nil
+                self.downloadPreparationTask = nil
+                self.downloadClient = nil
+                self.hasError = true
+                self.status = "准备录像下载失败：\(error.localizedDescription)"
+                self.logger.error("DOWNLOAD", "获取录像下载地址失败 error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func cancelRecordingDownload() {
+        guard downloadManager.isDownloading || preparingDownloadID != nil else { return }
+        downloadPreparationTask?.cancel()
+        downloadPreparationTask = nil
+        downloadRangeStopTask?.cancel()
+        downloadRangeStopTask = nil
+        preparingDownloadID = nil
+        downloadManager.cancel()
+        status = "下载已取消"
+        hasError = false
+        guard let client = downloadClient else { return }
+        downloadClient = nil
+        Task { try? await client.stopReplay() }
+        logger.info("DOWNLOAD", "用户取消录像下载")
+    }
+
     func stopReplay() {
         guard isReplay else { return }
         logger.info("REPLAY", "用户停止历史录像")
@@ -591,19 +688,28 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                       self.isReplay,
                       self.isCurrentPlaybackOperation(operationID),
                       self.replaySeekGeneration == seekGeneration else { return }
-                let committedTimestamp = self.replayPlaybackStartTime ?? recording.playbackStartTime
-                let committedSecond = max(0, min(self.replayDurationSecond, committedTimestamp - recording.startTime))
-                self.replayCurrentSecond = committedSecond
-                self.replayPosition = self.replayDurationSecond > 0
-                    ? Float(Double(committedSecond) / Double(self.replayDurationSecond))
-                    : 0
-                self.player?.play()
-                self.scheduleReplayProgressTimer()
-                self.isLoading = false
-                self.isPlaying = true
-                self.hasError = true
-                self.status = "历史录像跳转失败：\(error.localizedDescription)"
-                self.logger.error("REPLAY", "历史录像跳转失败 timestamp=\(timestamp) error=\(error.localizedDescription)")
+                self.logger.warning("REPLAY", "历史录像跳转失败，重新分配 TF 传输 timestamp=\(timestamp) error=\(error.localizedDescription)")
+                do {
+                    let renewedURL = try await client.playRecording(at: timestamp)
+                    guard self.api === client,
+                          self.isReplay,
+                          self.isCurrentPlaybackOperation(operationID),
+                          self.replaySeekGeneration == seekGeneration else { return }
+                    self.streamURL = renewedURL
+                    self.replayPlaybackStartTime = timestamp
+                    self.restartReplayPlayer()
+                    self.isLoading = false
+                    self.isPlaying = true
+                    self.hasError = false
+                    self.status = "历史回放已恢复"
+                    self.scheduleKeepAlive()
+                } catch {
+                    self.isLoading = false
+                    self.isPlaying = false
+                    self.hasError = true
+                    self.status = "历史录像恢复失败：\(error.localizedDescription)"
+                    self.logger.error("REPLAY", "重新建立历史录像传输失败 timestamp=\(timestamp) error=\(error.localizedDescription)")
+                }
             }
         }
     }
@@ -826,10 +932,55 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastLoggedPlaybackSecond = -10
         logger.info("PLAYER", "开始本机解码 url=\(DiagnosticsLogger.redactedURL(streamURL))")
         player.play()
+        scheduleSpeedUpdates()
         if isReplay {
             applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         }
+    }
+
+    private func scheduleSpeedUpdates() {
+        speedTimer?.invalidate()
+        lastNetworkSample = (Date(), Self.receivedNetworkBytes())
+        speedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, self.player != nil else { return }
+            let now = Date()
+            let bytes = Self.receivedNetworkBytes()
+            guard let previous = self.lastNetworkSample else {
+                self.lastNetworkSample = (now, bytes)
+                return
+            }
+            let interval = now.timeIntervalSince(previous.date)
+            let delta = bytes >= previous.bytes ? bytes - previous.bytes : 0
+            self.lastNetworkSample = (now, bytes)
+            guard interval > 0 else { return }
+            self.streamSpeedText = Self.formatSpeed(Double(delta) / interval)
+        }
+    }
+
+    nonisolated private static func formatSpeed(_ bytesPerSecond: Double) -> String {
+        if bytesPerSecond >= 1_048_576 {
+            return String(format: "%.1f MB/s", bytesPerSecond / 1_048_576)
+        }
+        return String(format: "%.0f KB/s", bytesPerSecond / 1_024)
+    }
+
+    nonisolated private static func receivedNetworkBytes() -> UInt64 {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0, let first = addresses else { return 0 }
+        defer { freeifaddrs(addresses) }
+        var total: UInt64 = 0
+        var pointer: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = pointer {
+            let flags = Int32(current.pointee.ifa_flags)
+            if flags & IFF_UP != 0,
+               flags & IFF_LOOPBACK == 0,
+               let data = current.pointee.ifa_data?.assumingMemoryBound(to: if_data.self) {
+                total &+= UInt64(data.pointee.ifi_ibytes)
+            }
+            pointer = current.pointee.ifa_next
+        }
+        return total
     }
 
     private func scheduleReplayProgressTimer() {
@@ -985,34 +1136,57 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         playbackTask = task
     }
 
-    private func resumeReplayAfterForeground() {
-        guard isReplay, streamURL != nil else { return }
+    private func reopenReplayAfterInterruption() {
+        guard isReplay,
+              let client = api,
+              let recording = replayRecording else { return }
+        let timestamp = recording.playbackTimestamp(for: Double(replayPosition))
+        let operationID = playbackOperationID
+        isLoading = true
+        isPlaying = false
+        player?.pause()
 
-        if let player = player {
-            player.drawable = drawable
-            player.play()
-            applyReplayRate(to: player)
-            isPlaying = true
-            hasError = false
-            scheduleReplayProgressTimer()
-        } else if activeSurfaceHost != nil {
-            preparePlayerIfPossible()
-            isPlaying = player != nil
-        } else {
-            // SwiftUI may detach the representable while the app is backgrounded.
-            // Force a fresh host so mountPlayerSurface(in:role:) can resume output.
-            playerViewID = UUID()
-            isPlaying = false
-            logger.debug("REPLAY", "回到前台时播放器视图已卸载，等待重新挂载")
+        playbackTask?.cancel()
+        playbackTask = Task(priority: .userInitiated) { [weak self, client] in
+            do {
+                // iOS suspends timers and the camera may reclaim its TF push
+                // transfer. Always allocate a new one instead of seeking the
+                // stale transfer, which returns business code 3013/internal error.
+                let renewedURL = try await client.playRecording(at: timestamp)
+                guard let self,
+                      self.api === client,
+                      self.isReplay,
+                      self.isCurrentPlaybackOperation(operationID) else { return }
+                self.streamURL = renewedURL
+                self.replayPlaybackStartTime = timestamp
+                self.restartReplayPlayer()
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = false
+                self.status = "历史回放已恢复"
+                self.scheduleKeepAlive()
+                self.logger.info("REPLAY", "回前台重新建立历史回放成功 timestamp=\(timestamp)")
+            } catch {
+                guard let self,
+                      self.api === client,
+                      self.isReplay,
+                      self.isCurrentPlaybackOperation(operationID) else { return }
+                self.isLoading = false
+                self.isPlaying = false
+                self.hasError = true
+                self.status = "恢复历史回放失败：\(error.localizedDescription)"
+                self.logger.error("REPLAY", "回前台重新建立历史回放失败 timestamp=\(timestamp) error=\(error.localizedDescription)")
+            }
         }
-
-        scheduleKeepAlive()
-        logger.info("REPLAY", "回到前台后恢复历史回放播放器")
     }
 
     private func stopPlaybackOnly() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
+        speedTimer?.invalidate()
+        speedTimer = nil
+        lastNetworkSample = nil
+        streamSpeedText = "0 KB/s"
         cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
