@@ -2,6 +2,9 @@ import Combine
 import Foundation
 import MobileVLCKit
 import UIKit
+#if canImport(Darwin)
+import Darwin
+#endif
 
 @MainActor
 final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
@@ -27,6 +30,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
+    @Published private(set) var streamSpeedText = "0 KB/s"
+    let downloadManager = RecordingDownloadManager()
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -55,6 +60,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private weak var fullscreenSurfaceHost: UIView?
     private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
+    private var speedTimer: Timer?
+    private var lastNetworkSample: (date: Date, bytes: UInt64)?
     private var shouldPlay = false
     private var reconnectInFlight = false
     private var foregroundRefreshInFlight = false
@@ -66,6 +73,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
+    private var downloadObserver: AnyCancellable?
 
     init(
         credentialStore: CredentialStoring = CredentialStore.shared,
@@ -76,6 +84,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         self.credentialStore = credentialStore
         self.makeAPIClient = makeAPIClient
         super.init()
+        downloadObserver = downloadManager.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         if let savedLogin = credentialStore.load() {
             let autoConnectEnabled = credentialStore.isAutoConnectEnabled()
             phone = savedLogin.phone
@@ -474,6 +485,59 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         playbackTask = task
     }
 
+    func downloadRecording(_ recording: AijiaRecording) {
+        guard let client = api, isAuthenticated, !downloadManager.isDownloading else {
+            status = downloadManager.isDownloading ? "已有录像正在下载" : "请先连接摄像头"
+            hasError = true
+            return
+        }
+
+        // The camera exposes one TF-card transfer per account. Close an active
+        // replay before allocating the same transfer for downloading.
+        let wasReplaying = isReplay
+        if wasReplaying {
+            _ = beginPlaybackOperation()
+            stopPlaybackOnly()
+            streamURL = nil
+            isReplay = false
+            resetReplayPlaybackState()
+        }
+        isLoading = true
+        hasError = false
+        status = "正在准备录像下载…"
+        logger.info("DOWNLOAD", "准备下载录像 start=\(recording.startTime) end=\(recording.endTime)")
+
+        Task(priority: .userInitiated) { [weak self, client] in
+            do {
+                if wasReplaying { try? await client.stopReplay() }
+                let url = try await client.playRecording(at: recording.playbackStartTime)
+                guard let self, self.api === client, self.isAuthenticated else { return }
+                self.isLoading = false
+                self.status = "录像正在下载，可在灵动岛查看进度"
+                self.downloadManager.start(url: url, recording: recording) { [weak self, client] result in
+                    guard let self else { return }
+                    Task { try? await client.stopReplay() }
+                    switch result {
+                    case let .success(url):
+                        self.status = "下载完成：\(url.lastPathComponent)（可在“文件”App 查看）"
+                        self.hasError = false
+                        self.logger.info("DOWNLOAD", "录像下载完成 file=\(url.lastPathComponent)")
+                    case let .failure(error):
+                        self.status = "录像下载失败：\(error.localizedDescription)"
+                        self.hasError = true
+                        self.logger.error("DOWNLOAD", "录像下载失败 error=\(error.localizedDescription)")
+                    }
+                }
+            } catch {
+                guard let self, self.api === client else { return }
+                self.isLoading = false
+                self.hasError = true
+                self.status = "准备录像下载失败：\(error.localizedDescription)"
+                self.logger.error("DOWNLOAD", "获取录像下载地址失败 error=\(error.localizedDescription)")
+            }
+        }
+    }
+
     func stopReplay() {
         guard isReplay else { return }
         logger.info("REPLAY", "用户停止历史录像")
@@ -826,10 +890,55 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastLoggedPlaybackSecond = -10
         logger.info("PLAYER", "开始本机解码 url=\(DiagnosticsLogger.redactedURL(streamURL))")
         player.play()
+        scheduleSpeedUpdates()
         if isReplay {
             applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         }
+    }
+
+    private func scheduleSpeedUpdates() {
+        speedTimer?.invalidate()
+        lastNetworkSample = (Date(), Self.receivedNetworkBytes())
+        speedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, self.player != nil else { return }
+            let now = Date()
+            let bytes = Self.receivedNetworkBytes()
+            guard let previous = self.lastNetworkSample else {
+                self.lastNetworkSample = (now, bytes)
+                return
+            }
+            let interval = now.timeIntervalSince(previous.date)
+            let delta = bytes >= previous.bytes ? bytes - previous.bytes : 0
+            self.lastNetworkSample = (now, bytes)
+            guard interval > 0 else { return }
+            self.streamSpeedText = Self.formatSpeed(Double(delta) / interval)
+        }
+    }
+
+    nonisolated private static func formatSpeed(_ bytesPerSecond: Double) -> String {
+        if bytesPerSecond >= 1_048_576 {
+            return String(format: "%.1f MB/s", bytesPerSecond / 1_048_576)
+        }
+        return String(format: "%.0f KB/s", bytesPerSecond / 1_024)
+    }
+
+    nonisolated private static func receivedNetworkBytes() -> UInt64 {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0, let first = addresses else { return 0 }
+        defer { freeifaddrs(addresses) }
+        var total: UInt64 = 0
+        var pointer: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = pointer {
+            let flags = Int32(current.pointee.ifa_flags)
+            if flags & IFF_UP != 0,
+               flags & IFF_LOOPBACK == 0,
+               let data = current.pointee.ifa_data?.assumingMemoryBound(to: if_data.self) {
+                total &+= UInt64(data.pointee.ifi_ibytes)
+            }
+            pointer = current.pointee.ifa_next
+        }
+        return total
     }
 
     private func scheduleReplayProgressTimer() {
@@ -1013,6 +1122,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func stopPlaybackOnly() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
+        speedTimer?.invalidate()
+        speedTimer = nil
+        lastNetworkSample = nil
+        streamSpeedText = "0 KB/s"
         cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
