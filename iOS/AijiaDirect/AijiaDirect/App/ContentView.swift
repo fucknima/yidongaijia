@@ -253,7 +253,7 @@ private struct PlayerSurface: View {
     let onFullscreen: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             VLCPlayerView(model: model)
                 .id(model.playerViewID)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -263,11 +263,26 @@ private struct PlayerSurface: View {
             Button(action: onFullscreen) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.headline)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black, radius: 2)
+                    .frame(width: 52, height: 52)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
             .accessibilityLabel("横屏全屏")
             .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+            Label(model.streamSpeedText, systemImage: "arrow.down")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black, radius: 2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.clear, in: Capsule())
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityLabel("视频实时拉取速度 \(model.streamSpeedText)")
         }
     }
 }
@@ -297,14 +312,25 @@ private struct FullscreenPlayerView: View {
                 .zIndex(2)
             }
 
+            Label(model.streamSpeedText, systemImage: "arrow.down")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black, radius: 2)
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityLabel("视频实时拉取速度 \(model.streamSpeedText)")
+
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.headline)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black, radius: 2)
+                    .frame(width: 52, height: 52)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
             .accessibilityLabel("退出全屏")
             .padding()
         }
@@ -765,6 +791,7 @@ private struct HistoryView: View {
     @State private var selectedDate = Date()
     @State private var hasLoadedOnce = false
     @State private var showingDiagnostics = false
+    @State private var downloadSelection: AijiaRecording?
     @State private var showingFullscreen = false
 
     var body: some View {
@@ -823,13 +850,18 @@ private struct HistoryView: View {
                             .font(.headline)
 
                         ForEach(model.recordings) { recording in
-                            Button {
-                                model.playRecording(recording)
-                            } label: {
-                                HStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                Button {
+                                    model.playRecording(recording)
+                                } label: {
                                     Image(systemName: "play.circle.fill")
                                         .font(.title2)
                                         .foregroundStyle(.blue)
+                                }
+                                .buttonStyle(.plain)
+                                Button {
+                                    model.playRecording(recording)
+                                } label: {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
@@ -838,16 +870,58 @@ private struct HistoryView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.tertiary)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
+                                .buttonStyle(.plain)
+                                Button {
+                                    if model.downloadManager.recordingID == recording.id || model.preparingDownloadID == recording.id {
+                                        model.cancelRecordingDownload()
+                                    } else {
+                                        downloadSelection = recording
+                                    }
+                                } label: {
+                                    Image(systemName: (model.downloadManager.recordingID == recording.id || model.preparingDownloadID == recording.id) ? "xmark.circle" : "arrow.down.circle")
+                                        .font(.title2)
+                                }
+                                .disabled((model.downloadManager.isDownloading || model.preparingDownloadID != nil) && model.downloadManager.recordingID != recording.id && model.preparingDownloadID != recording.id)
+                                .accessibilityLabel((model.downloadManager.recordingID == recording.id || model.preparingDownloadID == recording.id) ? "取消下载" : "选择下载范围")
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
                             Divider()
                         }
                     }
+                }
+
+                if model.downloadManager.isDownloading || model.preparingDownloadID != nil || !model.downloadManager.stateText.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label(model.preparingDownloadID != nil ? "准备下载" : model.downloadManager.stateText, systemImage: "arrow.down.circle.fill")
+                            Spacer()
+                            Text(model.downloadManager.progress, format: .percent.precision(.fractionLength(0)))
+                                .monospacedDigit()
+                        }
+                        ProgressView(value: model.downloadManager.progress)
+                        Text(ByteCountFormatter.string(fromByteCount: model.downloadManager.downloadedBytes, countStyle: .file))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Label(model.downloadManager.downloadSpeedText, systemImage: "speedometer")
+                                .font(.caption.monospacedDigit())
+                            Spacer()
+                            if model.downloadManager.isDownloading || model.preparingDownloadID != nil {
+                                Button("取消并删除", role: .destructive) {
+                                    model.cancelRecordingDownload()
+                                }
+                            } else if model.downloadManager.savedURL != nil {
+                                Button("删除文件", role: .destructive) {
+                                    model.downloadManager.deleteSavedFile()
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
                 StatusText(model: model)
@@ -888,6 +962,11 @@ private struct HistoryView: View {
                 DiagnosticsView(model: model)
             }
         }
+        .sheet(item: $downloadSelection) { recording in
+            RecordingDownloadRangeView(recording: recording) { selectedRange in
+                model.downloadRecording(selectedRange)
+            }
+        }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
         }) {
@@ -900,6 +979,76 @@ private struct HistoryView: View {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "HH:mm:ss"
         return "\(formatter.string(from: recording.startDate)) – \(formatter.string(from: recording.endDate))"
+    }
+}
+
+private struct RecordingDownloadRangeView: View {
+    let recording: AijiaRecording
+    let onDownload: (AijiaRecording) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var startOffset: Double
+    @State private var endOffset: Double
+
+    init(recording: AijiaRecording, onDownload: @escaping (AijiaRecording) -> Void) {
+        self.recording = recording
+        self.onDownload = onDownload
+        let duration = Double(max(1, recording.endTime - recording.startTime))
+        _startOffset = State(initialValue: 0)
+        _endOffset = State(initialValue: duration)
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("自由选择下载范围") {
+                    rangeLabel("开始", value: formatted(startOffset))
+                    Slider(value: $startOffset, in: 0...max(0, endOffset - 1), step: 1)
+                    rangeLabel("结束", value: formatted(endOffset))
+                    Slider(value: $endOffset, in: min(duration, startOffset + 1)...duration, step: 1)
+                    rangeLabel("下载时长", value: formatted(endOffset - startOffset))
+                }
+                Section {
+                    Button {
+                        let selected = AijiaRecording(
+                            startTime: recording.startTime + Int64(startOffset),
+                            endTime: recording.startTime + Int64(endOffset)
+                        )
+                        dismiss()
+                        onDownload(selected)
+                    } label: {
+                        Label("开始下载", systemImage: "arrow.down.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } footer: {
+                    Text("摄像头录像流通常不支持 HTTP 分段；应用会使用独立后台连接，不中断当前回放。")
+                }
+            }
+            .navigationTitle("选择录像范围")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var duration: Double { Double(max(1, recording.endTime - recording.startTime)) }
+
+    private func rangeLabel(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+    }
+
+    private func formatted(_ seconds: Double) -> String {
+        let value = max(0, Int(seconds.rounded()))
+        return String(format: "%02d:%02d:%02d", value / 3_600, (value % 3_600) / 60, value % 60)
     }
 }
 
