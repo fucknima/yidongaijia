@@ -497,7 +497,131 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         logger.info("PLAYER", "历史回放结束，立即恢复实时流")
 
         let task = Task(priority: .userInitiated) { [weak self, client] in
-            guard let self = self else …1474 tokens truncated…ate(to: player)
+            guard let self = self else { return }
+
+            do {
+                try await client.stopReplay()
+            } catch {
+                self.logger.warning("REPLAY", "停止历史录像请求失败，继续恢复实时流 error=\(error.localizedDescription)")
+            }
+
+            guard self.isCurrentPlaybackOperation(operationID), self.shouldPlay else { return }
+
+            do {
+                let stream = try await client.openStream()
+                guard self.isCurrentPlaybackOperation(operationID),
+                      self.shouldPlay,
+                      self.api === client,
+                      !self.isReplay else { return }
+                self.cameraName = stream.camera.name
+                self.streamURL = stream.url
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = false
+                self.status = "已回到实时流，正在本机播放"
+                self.logger.info("PLAYER", "历史回放后实时流恢复成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
+                self.preparePlayerIfPossible()
+                self.scheduleKeepAlive()
+            } catch {
+                guard self.isCurrentPlaybackOperation(operationID),
+                      self.shouldPlay,
+                      self.api === client,
+                      !self.isReplay else { return }
+                self.isLoading = false
+                self.isPlaying = false
+                self.hasError = true
+                self.status = "恢复实时画面失败：\(error.localizedDescription)"
+                self.logger.error("PLAYER", "历史回放后恢复实时流失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
+    }
+
+    func seekReplay(to position: Double) {
+        guard isReplay, let client = api, isAuthenticated, let recording = replayRecording else {
+            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会话")
+            return
+        }
+
+        let clampedPosition = max(0.0, min(1.0, position))
+        let timestamp = recording.playbackTimestamp(for: clampedPosition)
+        replayPosition = Float(clampedPosition)
+        replayCurrentSecond = max(0, min(replayDurationSecond, timestamp - recording.startTime))
+        replaySeekTask?.cancel()
+        replaySeekGeneration &+= 1
+        let seekGeneration = replaySeekGeneration
+        let operationID = playbackOperationID
+        isLoading = true
+        isPlaying = false
+        hasError = false
+        replayProgressTimer?.invalidate()
+        replayProgressTimer = nil
+        player?.pause()
+        status = "正在跳转历史录像…"
+        logger.info(
+            "REPLAY",
+            "用户拖动回放进度 position=\(String(format: "%.4f", clampedPosition)) timestamp=\(timestamp)"
+        )
+
+        replaySeekTask = Task(priority: .userInitiated) { [weak self, client, operationID, seekGeneration] in
+            do {
+                try await client.seekRecording(at: timestamp)
+                // Let the server-side transfer settle before rebuilding VLC.
+                // Reopening immediately can attach to an empty response and
+                // leave the replay view black.
+                try await Task.sleep(nanoseconds: 500_000_000)
+                guard let self = self,
+                      self.api === client,
+                      self.isReplay,
+                      self.isCurrentPlaybackOperation(operationID),
+                      self.replaySeekGeneration == seekGeneration,
+                      !Task.isCancelled else { return }
+                self.replayPlaybackStartTime = timestamp
+                self.restartReplayPlayer()
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = false
+                self.status = "正在播放内存卡录像"
+                self.logger.info("REPLAY", "历史录像跳转成功 timestamp=\(timestamp)")
+            } catch is CancellationError {
+                self?.logger.debug("REPLAY", "历史录像跳转请求已取消")
+            } catch {
+                guard let self = self,
+                      self.api === client,
+                      self.isReplay,
+                      self.isCurrentPlaybackOperation(operationID),
+                      self.replaySeekGeneration == seekGeneration else { return }
+                let committedTimestamp = self.replayPlaybackStartTime ?? recording.playbackStartTime
+                let committedSecond = max(0, min(self.replayDurationSecond, committedTimestamp - recording.startTime))
+                self.replayCurrentSecond = committedSecond
+                self.replayPosition = self.replayDurationSecond > 0
+                    ? Float(Double(committedSecond) / Double(self.replayDurationSecond))
+                    : 0
+                self.player?.play()
+                self.scheduleReplayProgressTimer()
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = true
+                self.status = "历史录像跳转失败：\(error.localizedDescription)"
+                self.logger.error("REPLAY", "历史录像跳转失败 timestamp=\(timestamp) error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func restartReplayPlayer() {
+        guard isReplay, let streamURL = streamURL else { return }
+        cancelReplayRateVerification()
+        replayProgressTimer?.invalidate()
+        replayProgressTimer = nil
+        logger.debug("REPLAY", "服务器回放定位成功，复用播放器恢复播放")
+        if let player = player {
+            player.delegate = nil
+            player.stop()
+            player.drawable = drawable
+            player.media = VLCMedia(url: streamURL)
+            player.delegate = self
+            player.play()
+            applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         } else {
             preparePlayerIfPossible()
