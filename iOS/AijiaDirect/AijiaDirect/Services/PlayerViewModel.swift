@@ -801,7 +801,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
 
         layoutPlayerSurface(in: hostView)
-        preparePlayerIfPossible()
+        if player == nil {
+            preparePlayerIfPossible()
+        }
     }
 
     private func preparePlayerIfPossible() {
