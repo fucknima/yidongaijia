@@ -253,7 +253,7 @@ private struct PlayerSurface: View {
     let onFullscreen: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             VLCPlayerView(model: model)
                 .id(model.playerViewID)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -263,11 +263,24 @@ private struct PlayerSurface: View {
             Button(action: onFullscreen) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.headline)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black, radius: 2)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
             .accessibilityLabel("横屏全屏")
             .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+            Label(model.streamSpeedText, systemImage: "arrow.down")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black, radius: 2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.clear, in: Capsule())
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityLabel("视频实时拉取速度 \(model.streamSpeedText)")
         }
     }
 }
@@ -297,14 +310,23 @@ private struct FullscreenPlayerView: View {
                 .zIndex(2)
             }
 
+            Label(model.streamSpeedText, systemImage: "arrow.down")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .shadow(color: .black, radius: 2)
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityLabel("视频实时拉取速度 \(model.streamSpeedText)")
+
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.headline)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black, radius: 2)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
             .accessibilityLabel("退出全屏")
             .padding()
         }
@@ -823,13 +845,18 @@ private struct HistoryView: View {
                             .font(.headline)
 
                         ForEach(model.recordings) { recording in
-                            Button {
-                                model.playRecording(recording)
-                            } label: {
-                                HStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                Button {
+                                    model.playRecording(recording)
+                                } label: {
                                     Image(systemName: "play.circle.fill")
                                         .font(.title2)
                                         .foregroundStyle(.blue)
+                                }
+                                .buttonStyle(.plain)
+                                Button {
+                                    model.playRecording(recording)
+                                } label: {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
@@ -838,16 +865,58 @@ private struct HistoryView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundStyle(.tertiary)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
+                                .buttonStyle(.plain)
+                                Button {
+                                    if model.downloadManager.recordingID == recording.id {
+                                        model.cancelRecordingDownload()
+                                    } else {
+                                        model.downloadRecording(recording)
+                                    }
+                                } label: {
+                                    Image(systemName: model.downloadManager.recordingID == recording.id ? "xmark.circle" : "arrow.down.circle")
+                                        .font(.title2)
+                                }
+                                .disabled(model.downloadManager.isDownloading && model.downloadManager.recordingID != recording.id)
+                                .accessibilityLabel(model.downloadManager.recordingID == recording.id ? "取消下载" : "下载此录像到手机")
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
                             Divider()
                         }
                     }
+                }
+
+                if model.downloadManager.isDownloading || !model.downloadManager.stateText.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Label(model.downloadManager.stateText, systemImage: "arrow.down.circle.fill")
+                            Spacer()
+                            Text(model.downloadManager.progress, format: .percent.precision(.fractionLength(0)))
+                                .monospacedDigit()
+                        }
+                        ProgressView(value: model.downloadManager.progress)
+                        Text(ByteCountFormatter.string(fromByteCount: model.downloadManager.downloadedBytes, countStyle: .file))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Label(model.downloadManager.downloadSpeedText, systemImage: "speedometer")
+                                .font(.caption.monospacedDigit())
+                            Spacer()
+                            if model.downloadManager.isDownloading {
+                                Button("取消并删除", role: .destructive) {
+                                    model.cancelRecordingDownload()
+                                }
+                            } else if model.downloadManager.savedURL != nil {
+                                Button("删除文件", role: .destructive) {
+                                    model.downloadManager.deleteSavedFile()
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
                 StatusText(model: model)

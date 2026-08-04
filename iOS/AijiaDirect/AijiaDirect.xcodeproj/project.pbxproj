@@ -16,6 +16,9 @@
 		100000000000000000000007 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* DiagnosticsLogger.swift */; };
 		100000000000000000000008 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* CredentialStore.swift */; };
 		100000000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* Assets.xcassets */; };
+		10000000000000000000000A /* RecordingDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* RecordingDownloadManager.swift */; };
+		10000000000000000000000B /* RecordingDownloadWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* RecordingDownloadWidget.swift */; };
+		10000000000000000000000C /* Widget extension in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* AijiaDirectDownloadWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,7 +29,12 @@
 			remoteGlobalIDString = 500000000000000000000001;
 			remoteInfo = AijiaDirect;
 		};
+		900000000000000000000003 /* Widget Proxy */ = {isa = PBXContainerItemProxy; containerPortal = 700000000000000000000001; proxyType = 1; remoteGlobalIDString = 500000000000000000000003; remoteInfo = AijiaDirectDownloadWidget; };
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		300000000000000000000008 /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (10000000000000000000000C /* Widget extension in Embed App Extensions */, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		200000000000000000000001 /* AijiaDirectApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AijiaDirectApp.swift; sourceTree = "<group>"; };
@@ -41,6 +49,10 @@
 		200000000000000000000010 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
 		200000000000000000000011 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		200000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		200000000000000000000013 /* RecordingDownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDownloadManager.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* RecordingDownloadWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDownloadWidget.swift; sourceTree = "<group>"; };
+		200000000000000000000015 /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000016 /* AijiaDirectDownloadWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AijiaDirectDownloadWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +70,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		30000000000000000000000A /* Widget Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -66,6 +79,7 @@
 			children = (
 				400000000000000000000002 /* AijiaDirect */,
 				400000000000000000000006 /* AijiaDirectTests */,
+				400000000000000000000008 /* AijiaDirectDownloadWidget */,
 				400000000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -98,6 +112,7 @@
 				200000000000000000000004 /* PlayerViewModel.swift */,
 				200000000000000000000010 /* DiagnosticsLogger.swift */,
 				200000000000000000000011 /* CredentialStore.swift */,
+				200000000000000000000013 /* RecordingDownloadManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -118,11 +133,13 @@
 			path = AijiaDirectTests;
 			sourceTree = "<group>";
 		};
+		400000000000000000000008 /* AijiaDirectDownloadWidget */ = {isa = PBXGroup; children = (200000000000000000000014 /* RecordingDownloadWidget.swift */, 200000000000000000000015 /* Widget Info.plist */, ); path = AijiaDirectDownloadWidget; sourceTree = "<group>"; };
 		400000000000000000000007 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				200000000000000000000007 /* AijiaDirect.app */,
 				200000000000000000000008 /* AijiaDirectTests.xctest */,
+				200000000000000000000016 /* AijiaDirectDownloadWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -137,16 +154,19 @@
 				300000000000000000000003 /* Sources */,
 				300000000000000000000001 /* Frameworks */,
 				300000000000000000000005 /* Resources */,
+				300000000000000000000008 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				900000000000000000000004 /* Widget Dependency */,
 			);
 			name = AijiaDirect;
 			productName = AijiaDirect;
 			productReference = 200000000000000000000007 /* AijiaDirect.app */;
 			productType = "com.apple.product-type.application";
 		};
+		500000000000000000000003 /* AijiaDirectDownloadWidget */ = {isa = PBXNativeTarget; buildConfigurationList = 600000000000000000000004; buildPhases = (300000000000000000000009 /* Widget Sources */, 30000000000000000000000A /* Widget Frameworks */, ); buildRules = (); dependencies = (); name = AijiaDirectDownloadWidget; productName = AijiaDirectDownloadWidget; productReference = 200000000000000000000016; productType = "com.apple.product-type.app-extension"; };
 		500000000000000000000002 /* AijiaDirectTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 600000000000000000000002 /* Build configuration list for PBXNativeTarget "AijiaDirectTests" */;
@@ -199,6 +219,7 @@
 			targets = (
 				500000000000000000000001 /* AijiaDirect */,
 				500000000000000000000002 /* AijiaDirectTests */,
+				500000000000000000000003 /* AijiaDirectDownloadWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -222,6 +243,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		900000000000000000000004 /* Widget Dependency */ = {isa = PBXTargetDependency; target = 500000000000000000000003 /* AijiaDirectDownloadWidget */; targetProxy = 900000000000000000000003 /* Widget Proxy */; };
 		900000000000000000000002 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 500000000000000000000001 /* AijiaDirect */;
@@ -241,6 +263,7 @@
 				100000000000000000000005 /* VLCPlayerView.swift in Sources */,
 				100000000000000000000007 /* DiagnosticsLogger.swift in Sources */,
 				100000000000000000000008 /* CredentialStore.swift in Sources */,
+				10000000000000000000000A /* RecordingDownloadManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -252,6 +275,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		300000000000000000000009 /* Widget Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (10000000000000000000000B /* RecordingDownloadWidget.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -366,6 +390,8 @@
 			};
 			name = Release;
 		};
+		800000000000000000000007 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AijiaDirectDownloadWidget/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.1; PRODUCT_BUNDLE_IDENTIFIER = com.example.AijiaDirect.DownloadWidget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		800000000000000000000008 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AijiaDirectDownloadWidget/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.1; PRODUCT_BUNDLE_IDENTIFIER = com.example.AijiaDirect.DownloadWidget; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -396,6 +422,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		600000000000000000000004 /* Widget config */ = {isa = XCConfigurationList; buildConfigurations = (800000000000000000000007 /* Debug */, 800000000000000000000008 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = 700000000000000000000001 /* Project object */;
