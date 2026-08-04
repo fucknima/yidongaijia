@@ -187,6 +187,8 @@ private func aijiaStringValue(_ value: Any?) -> String {
 }
 
 protocol AijiaAPIClient: AnyObject {
+    func loginAndListCameras() async throws -> [AijiaCamera]
+    func selectCamera(id: String) throws
     func openStream() async throws -> AijiaStream
     func keepAlive() async throws
     func controlPTZ(direction: AijiaPTZDirection) async throws
@@ -208,7 +210,7 @@ final class AijiaAPI: AijiaAPIClient {
 
     private let phone: String
     private let password: String?
-    private let cameraSelector: String
+    private var cameraSelector: String
     // Persist a stable device UUID for the base and video sessions.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
     private let session: URLSession
@@ -218,6 +220,7 @@ final class AijiaAPI: AijiaAPIClient {
     private var passID = ""
     private var videoToken = ""
     private var camera: AijiaCamera?
+    private var cameraListCache: [AijiaCamera] = []
     private var userSelectedProvCode = "57"
     private var userSelectedCityCode = "610400"
 
@@ -299,6 +302,22 @@ final class AijiaAPI: AijiaAPIClient {
         }
 
         throw lastError
+    }
+
+    func loginAndListCameras() async throws -> [AijiaCamera] {
+        if videoToken.isEmpty { try await loginVideo() }
+        let cameras = try await cameraList().map { try AijiaCamera($0) }
+        guard !cameras.isEmpty else { throw AijiaAPIError.emptyCameraList }
+        cameraListCache = cameras
+        return cameras
+    }
+
+    func selectCamera(id: String) throws {
+        guard let selected = cameraListCache.first(where: { $0.id == id }) else {
+            throw AijiaAPIError.cameraNotFound
+        }
+        camera = selected
+        cameraSelector = AijiaSigning.normalized(selected.id)
     }
 
     func keepAlive() async throws {

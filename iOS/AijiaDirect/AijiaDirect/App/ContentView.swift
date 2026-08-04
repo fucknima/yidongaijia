@@ -36,7 +36,6 @@ private struct LoginView: View {
     private enum Field: Hashable {
         case phone
         case password
-        case camera
     }
 
     var body: some View {
@@ -63,10 +62,6 @@ private struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .password)
 
-                            TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($focusedField, equals: .camera)
-
                             Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
 
@@ -79,7 +74,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
+                                    Text(model.isLoading ? "正在登录…" : "登录")
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -132,6 +127,7 @@ private struct PlayerScreen: View {
     @State private var showingHistory = false
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
+    @State private var showingAbout = false
 
     var body: some View {
         NavigationView {
@@ -188,6 +184,10 @@ private struct PlayerScreen: View {
 
                     StatusText(model: model)
 
+                    if model.isAuthenticated, !model.availableCameras.isEmpty {
+                        CameraSelectionPanel(model: model)
+                    }
+
                     if model.isAuthenticated {
                         PTZControlPanel(model: model)
 
@@ -223,6 +223,26 @@ private struct PlayerScreen: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Text("版本 \(AppVersionInfo.display)")
+                        if !model.availableCameras.isEmpty {
+                            Menu("选择摄像头") {
+                                ForEach(model.availableCameras) { camera in
+                                    Button {
+                                        model.selectCameraAndPlay(camera.id)
+                                    } label: {
+                                        if model.selectedCameraID == camera.id {
+                                            Label(camera.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(camera.name)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Button {
+                            showingAbout = true
+                        } label: {
+                            Label("关于", systemImage: "info.circle")
+                        }
                         Button(role: .destructive) {
                             model.logout()
                         } label: {
@@ -240,10 +260,67 @@ private struct PlayerScreen: View {
                 DiagnosticsView(model: model)
             }
         }
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
+        }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
         }) {
             FullscreenPlayerView(model: model)
+        }
+    }
+}
+
+private struct CameraSelectionPanel: View {
+    @ObservedObject var model: PlayerViewModel
+
+    var body: some View {
+        GroupBox("摄像头设备") {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("选择摄像头", selection: $model.selectedCameraID) {
+                    Text("请选择").tag("")
+                    ForEach(model.availableCameras) { camera in
+                        Text(camera.name).tag(camera.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                Button {
+                    model.selectCameraAndPlay(model.selectedCameraID)
+                } label: {
+                    Label("开始播放", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.selectedCameraID.isEmpty || model.isLoading)
+            }
+        }
+    }
+}
+
+private struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("项目介绍") {
+                    Text("爱家直连是移动爱家摄像头的第三方 iOS 客户端，视频由手机直接获取并在本机解码。本项目与中国移动及移动爱家无官方关联。")
+                }
+                Section("开源信息") {
+                    Link("github.com/fucknima/yidongaijia", destination: URL(string: "https://github.com/fucknima/yidongaijia")!)
+                    HStack {
+                        Text("作者")
+                        Spacer()
+                        Text("fucknima").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("关于")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
         }
     }
 }
@@ -409,16 +486,6 @@ private enum ReleaseNotesCatalog {
             ]
         ),
         ReleaseNote(
-            version: "历史构建 speedfix",
-            date: "2026-08-02",
-            title: "回放倍速与播放器状态修复",
-            details: [
-                "修复倍速设置被播放器回调覆盖的问题。",
-                "回放切换、拖动进度和播放器重建时重新应用倍速。",
-                "降低播放器视图更新对回放进度的干扰。"
-            ]
-        ),
-        ReleaseNote(
             version: "历史构建 replaydiagfix",
             date: "2026-08-02",
             title: "回放进度与诊断稳定性修复",
@@ -446,16 +513,6 @@ private enum ReleaseNotesCatalog {
                 "支持导出诊断日志，并允许从 iPhone 文件 App 访问。",
                 "修复回放切换后台再回来后只剩声音或视图丢失。",
                 "增加回放播放器在前后台切换时的恢复和旧地址清理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v19–v20",
-            date: "2026-08-02",
-            title: "进度条与倍速播放",
-            details: [
-                "增加内存卡回放进度条和时间显示。",
-                "增加 0.5x、1x、2x、3x、5x 倍速播放。",
-                "拖动进度时使用云端回放定位，避免本地播放器时间与服务器录像不同步。"
             ]
         ),
         ReleaseNote(
@@ -594,7 +651,6 @@ private struct ReplayControls: View {
     @State private var sliderValue = 0.0
     @State private var isEditing = false
 
-    private let rates: [Float] = [0.5, 1.0, 2.0, 3.0, 5.0]
 
     init(
         model: PlayerViewModel,
@@ -662,27 +718,9 @@ private struct ReplayControls: View {
             )
             .disabled(model.isLoading || model.replayDurationSecond <= 0)
 
-            HStack {
-                Label("内存卡回放", systemImage: "play.rectangle")
-                    .font(.subheadline)
-                Spacer()
-                Menu {
-                    ForEach(rates, id: \.self) { rate in
-                        Button {
-                            model.setReplayRate(rate)
-                        } label: {
-                            if abs(model.replayRate - rate) < 0.01 {
-                                Label(rateLabel(rate), systemImage: "checkmark")
-                            } else {
-                                Text(rateLabel(rate))
-                            }
-                        }
-                    }
-                } label: {
-                    Label(rateLabel(model.replayRate), systemImage: "speedometer")
-                }
-                .disabled(model.isLoading)
-            }
+            Label("内存卡回放", systemImage: "play.rectangle")
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -701,12 +739,6 @@ private struct ReplayControls: View {
         return String(format: "%02lld:%02lld", minutes, remainingSeconds)
     }
 
-    private func rateLabel(_ rate: Float) -> String {
-        if abs(rate.rounded() - rate) < 0.01 {
-            return String(format: "%.0fx", rate)
-        }
-        return String(format: "%.1fx", rate)
-    }
 }
 
 private struct PTZControlPanel: View {
@@ -718,24 +750,28 @@ private struct PTZControlPanel: View {
 
     var body: some View {
         GroupBox {
-            VStack(spacing: 10) {
-                Text("云台控制")
-                    .font(.headline)
-
-                PTZDirectionButton(direction: .up, model: model)
-
-                HStack(spacing: 12) {
-                    PTZDirectionButton(direction: .left, model: model)
-
-                    Image(systemName: "camera.metering.center.weighted")
+            VStack(spacing: 14) {
+                HStack {
+                    Label("云台控制", systemImage: "move.3d")
+                        .font(.headline)
+                    Spacer()
+                    Text(isDisabled ? "不可用" : "点击方向移动")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 58, height: 42)
-
-                    PTZDirectionButton(direction: .right, model: model)
                 }
-
-                PTZDirectionButton(direction: .down, model: model)
-
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+                    Color.clear.frame(height: 48)
+                    PTZDirectionButton(direction: .up, model: model)
+                    Color.clear.frame(height: 48)
+                    PTZDirectionButton(direction: .left, model: model)
+                    Image(systemName: "camera.metering.center.weighted")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    PTZDirectionButton(direction: .right, model: model)
+                    Color.clear.frame(height: 48)
+                    PTZDirectionButton(direction: .down, model: model)
+                    Color.clear.frame(height: 48)
+                }
             }
             .frame(maxWidth: .infinity)
             .disabled(isDisabled)
@@ -752,7 +788,7 @@ private struct PTZDirectionButton: View {
             model.controlPTZ(direction)
         } label: {
             Image(systemName: direction.systemImage)
-                .frame(width: 58, height: 42)
+                .frame(maxWidth: .infinity, minHeight: 48)
         }
         .buttonStyle(.bordered)
         .accessibilityLabel("云台\(direction.title)")

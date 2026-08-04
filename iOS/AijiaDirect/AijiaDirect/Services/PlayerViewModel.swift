@@ -23,10 +23,11 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var replayPosition: Float = 0
     @Published private(set) var replayCurrentSecond: Int64 = 0
     @Published private(set) var replayDurationSecond: Int64 = 0
-    @Published private(set) var replayRate: Float = 1.0
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
+    @Published private(set) var availableCameras: [AijiaCamera] = []
+    @Published var selectedCameraID = ""
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -34,8 +35,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var replaySeekTask: Task<Void, Never>?
     private var replaySeekGeneration = 0
     private var replayProgressTimer: Timer?
-    private var replayRateVerificationTask: Task<Void, Never>?
-    private var replayRateVerificationGeneration = 0
     private var recordingsTask: Task<Void, Never>?
     private var recordingsQueryGeneration = 0
     private var recordingsQueryKey: String?
@@ -89,6 +88,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 "AUTH",
                 "已从钥匙串恢复登录信息 account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled)"
             )
+            availableCameras = Self.loadCachedCameras(for: savedLogin.phone)
+            selectedCameraID = availableCameras.first(where: {
+                AijiaSigning.normalized($0.id) == AijiaSigning.normalized(savedLogin.cameraSelector)
+            })?.id ?? ""
         } else {
             logger.info("AUTH", "未找到保存的登录信息")
         }
@@ -115,7 +118,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         didUserLogout = false
         let operationID = beginPlaybackOperation()
         cancelRecordingsQuery()
-        finishReplayIfNeeded()
         isReplay = false
         resetReplayPlaybackState()
         stopPlaybackOnly()
@@ -130,20 +132,20 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         hasError = false
         cameraName = ""
         streamURL = nil
-        status = "正在登录并获取实时地址…"
+        status = "正在登录并读取摄像头…"
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
             do {
-                let stream = try await client.openStream()
+                let cameras = try await client.loginAndListCameras()
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
                       self.shouldPlay,
                       self.api === client else { return }
-                cameraName = stream.camera.name
-                streamURL = stream.url
+                availableCameras = cameras
+                Self.cacheCameras(cameras, for: trimmedPhone)
                 isLoading = false
-                isPlaying = true
-                status = "已连接，正在本机解码"
+                isPlaying = false
+                status = "登录成功，请选择摄像头"
                 hasError = false
                 isAuthenticated = true
                 shouldShowLogin = false
@@ -166,8 +168,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     logger.info("AUTH", "用户关闭记住登录，已清除本地登录信息")
                 }
 
-                preparePlayerIfPossible()
-                scheduleKeepAlive()
+                let savedSelector = AijiaSigning.normalized(selectedCamera)
+                if let savedCamera = cameras.first(where: {
+                    [AijiaSigning.normalized($0.id), AijiaSigning.normalized($0.macID), AijiaSigning.normalized($0.name)].contains(savedSelector)
+                }), !savedSelector.isEmpty {
+                    selectCameraAndPlay(savedCamera.id)
+                }
             } catch {
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
@@ -184,6 +190,68 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             }
         }
         playbackTask = task
+    }
+
+    private static func cacheCameras(_ cameras: [AijiaCamera], for phone: String) {
+        let records = cameras.map {
+            ["id": $0.id, "name": $0.name, "macID": $0.macID, "baseURL": $0.baseURL.absoluteString]
+        }
+        UserDefaults.standard.set(records, forKey: "cameraCache.\(AijiaSigning.normalized(phone))")
+    }
+
+    private static func loadCachedCameras(for phone: String) -> [AijiaCamera] {
+        let records = UserDefaults.standard.array(forKey: "cameraCache.\(AijiaSigning.normalized(phone))") as? [[String: String]] ?? []
+        return records.compactMap { record in
+            guard let id = record["id"], let name = record["name"],
+                  let macID = record["macID"], let rawURL = record["baseURL"],
+                  let baseURL = URL(string: rawURL) else { return nil }
+            return AijiaCamera(id: id, name: name, macID: macID, baseURL: baseURL)
+        }
+    }
+
+    func selectCameraAndPlay(_ cameraID: String) {
+        guard let client = api,
+              let selected = availableCameras.first(where: { $0.id == cameraID }) else { return }
+        let operationID = beginPlaybackOperation()
+        finishReplayIfNeeded()
+        isReplay = false
+        resetReplayPlaybackState()
+        stopPlaybackOnly()
+        streamURL = nil
+        do { try client.selectCamera(id: cameraID) } catch {
+            status = error.localizedDescription
+            hasError = true
+            return
+        }
+        selectedCameraID = cameraID
+        cameraSelector = selected.id
+        cameraName = selected.name
+        isLoading = true
+        hasError = false
+        status = "正在连接 \(selected.name)…"
+        playbackTask = Task(priority: .userInitiated) { [weak self, client] in
+            do {
+                let stream = try await client.openStream()
+                guard let self, self.api === client, self.isCurrentPlaybackOperation(operationID) else { return }
+                self.streamURL = stream.url
+                self.cameraName = stream.camera.name
+                self.isLoading = false
+                self.isPlaying = true
+                self.status = "已连接，正在本机解码"
+                if self.rememberLogin, self.credentialStore.save(phone: self.phone.trimmingCharacters(in: .whitespacesAndNewlines), password: self.password, cameraSelector: selected.id) {
+                    self.hasSavedLogin = true
+                    self.credentialStore.setAutoConnectEnabled(true)
+                }
+                self.preparePlayerIfPossible()
+                self.scheduleKeepAlive()
+            } catch {
+                guard let self, self.api === client else { return }
+                self.isLoading = false
+                self.isPlaying = false
+                self.hasError = true
+                self.status = "连接摄像头失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     func stop() {
@@ -248,7 +316,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         didEnterBackgroundWhilePlaying = true
         hasError = false
         if isReplay {
-            cancelReplayRateVerification()
             replayProgressTimer?.invalidate()
             replayProgressTimer = nil
             player?.pause()
@@ -610,7 +677,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     private func restartReplayPlayer() {
         guard isReplay, let streamURL = streamURL else { return }
-        cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         logger.debug("REPLAY", "服务器回放定位成功，复用播放器恢复播放")
@@ -621,116 +687,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             player.media = VLCMedia(url: streamURL)
             player.delegate = self
             player.play()
-            applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         } else {
             preparePlayerIfPossible()
         }
     }
 
-    func setReplayRate(_ rate: Float) {
-        guard isReplay else { return }
-        let clampedRate = min(max(rate, 0.5), 5.0)
-        cancelReplayRateVerification()
-        replayRate = clampedRate
-        if let player = player {
-            applyReplayRate(to: player)
-        } else {
-            logger.debug("REPLAY", "播放器尚未创建，待开始输出时应用回放倍速 rate=\(String(format: "%.1f", clampedRate))")
-        }
-        status = "正在播放内存卡录像"
-        logger.info("REPLAY", "用户调整回放倍速 rate=\(String(format: "%.1f", clampedRate))")
-    }
-
-    private func applyReplayRate(to player: VLCMediaPlayer) {
-        guard isReplay else { return }
-
-        let requestedRate = replayRate
-        player.rate = requestedRate
-        logger.debug(
-            "REPLAY",
-            "应用回放倍速 requested=\(String(format: "%.1f", requestedRate)) " +
-                "playerRate=\(String(format: "%.1f", player.rate)) " +
-                "playing=\(player.isPlaying) seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-        )
-
-        guard player.isPlaying, abs(requestedRate - 1.0) > 0.01 else { return }
-        scheduleReplayRateVerification(for: player)
-    }
-
-    private func scheduleReplayRateVerification(for player: VLCMediaPlayer) {
-        replayRateVerificationTask?.cancel()
-        replayRateVerificationTask = nil
-        guard isReplay, player.isPlaying, abs(replayRate - 1.0) > 0.01 else { return }
-
-        replayRateVerificationGeneration &+= 1
-        let verificationID = replayRateVerificationGeneration
-        let operationID = playbackOperationID
-        let requestedRate = replayRate
-        let baselineMilliseconds = max(0, Int64(player.time.intValue))
-        let baselineDate = Date()
-
-        replayRateVerificationTask = Task { [weak self, weak player, operationID, verificationID, requestedRate, baselineMilliseconds, baselineDate] in
-            do {
-                try await Task.sleep(nanoseconds: 2_000_000_000)
-            } catch {
-                return
-            }
-
-            guard let self = self,
-                  let player = player,
-                  self.isReplay,
-                  self.player === player,
-                  self.isCurrentPlaybackOperation(operationID),
-                  self.replayRateVerificationGeneration == verificationID,
-                  abs(self.replayRate - requestedRate) < 0.01,
-                  player.isPlaying,
-                  !Task.isCancelled else {
-                return
-            }
-
-            let elapsed = max(Date().timeIntervalSince(baselineDate), 0.1)
-            let deltaMilliseconds = max(0, Int64(player.time.intValue) - baselineMilliseconds)
-            guard deltaMilliseconds >= 250 else {
-                self.logger.warning(
-                    "REPLAY",
-                    "倍速验证没有足够的时间进度 requested=\(String(format: "%.1f", requestedRate)) " +
-                        "playerRate=\(String(format: "%.1f", player.rate)) " +
-                        "seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-                )
-                self.replayRateVerificationTask = nil
-                return
-            }
-
-            let observedRate = Double(deltaMilliseconds) / 1_000.0 / elapsed
-            let tolerance = max(0.35, Double(requestedRate) * 0.30)
-            self.logger.debug(
-                "REPLAY",
-                "倍速验证 requested=\(String(format: "%.1f", requestedRate)) " +
-                    "observed=\(String(format: "%.2f", observedRate)) " +
-                    "playerRate=\(String(format: "%.1f", player.rate)) " +
-                    "seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-            )
-
-            if abs(observedRate - Double(requestedRate)) > tolerance {
-                player.rate = 1.0
-                self.replayRate = 1.0
-                self.status = "当前回放流不支持该倍速，已回退到 1x"
-                self.logger.warning(
-                    "REPLAY",
-                    "回放流未按请求倍速播放，已回退到 1x requested=\(String(format: "%.1f", requestedRate)) " +
-                        "observed=\(String(format: "%.2f", observedRate))"
-                )
-            }
-            self.replayRateVerificationTask = nil
-        }
-    }
-
-    private func cancelReplayRateVerification() {
-        replayRateVerificationTask?.cancel()
-        replayRateVerificationTask = nil
-        replayRateVerificationGeneration &+= 1
-    }
 
     func mountPlayerSurface(in hostView: UIView, role: VLCPlayerSurfaceRole) {
         switch role {
@@ -811,7 +773,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
         if let player = player {
             if isReplay {
-                applyReplayRate(to: player)
                 scheduleReplayProgressTimer()
             }
             return
@@ -827,7 +788,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         logger.info("PLAYER", "开始本机解码 url=\(DiagnosticsLogger.redactedURL(streamURL))")
         player.play()
         if isReplay {
-            applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         }
     }
@@ -991,7 +951,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         if let player = player {
             player.drawable = drawable
             player.play()
-            applyReplayRate(to: player)
             isPlaying = true
             hasError = false
             scheduleReplayProgressTimer()
@@ -1013,7 +972,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func stopPlaybackOnly() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
-        cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         if player != nil {
@@ -1025,7 +983,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func resetReplayPlaybackState() {
-        cancelReplayRateVerification()
         replaySeekTask?.cancel()
         replaySeekTask = nil
         replayProgressTimer?.invalidate()
@@ -1035,7 +992,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayPosition = 0
         replayCurrentSecond = 0
         replayDurationSecond = 0
-        replayRate = 1.0
     }
 
     private func cancelRecordingsQuery() {
@@ -1048,7 +1004,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func beginPlaybackOperation() -> Int {
-        cancelReplayRateVerification()
         playbackTask?.cancel()
         playbackTask = nil
         replayCleanupTask?.cancel()
@@ -1122,7 +1077,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isPlaying = true
         hasError = false
         if isReplay {
-            applyReplayRate(to: currentPlayer)
             scheduleReplayProgressTimer()
         }
         logger.info("PLAYER", "VLC 已开始输出视频")

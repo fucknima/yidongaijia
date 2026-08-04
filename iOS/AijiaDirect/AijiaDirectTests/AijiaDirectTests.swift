@@ -332,6 +332,12 @@ private final class StubAijiaAPIClient: AijiaAPIClient {
         self.openStreamResult = openStreamResult
     }
 
+    func loginAndListCameras() async throws -> [AijiaCamera] {
+        [try openStreamResult.get().camera]
+    }
+
+    func selectCamera(id: String) throws {}
+
     func openStream() async throws -> AijiaStream {
         openStreamCallCount += 1
         return try openStreamResult.get()
