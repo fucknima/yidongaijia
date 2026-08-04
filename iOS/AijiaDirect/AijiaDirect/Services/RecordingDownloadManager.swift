@@ -1,18 +1,6 @@
 import ActivityKit
 import Foundation
 
-@available(iOS 16.1, *)
-struct RecordingDownloadAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
-        var progress: Double
-        var downloadedBytes: Int64
-        var status: String
-        var speedText: String
-    }
-
-    var fileName: String
-}
-
 @MainActor
 final class RecordingDownloadManager: NSObject, ObservableObject {
     @Published private(set) var recordingID: String?
@@ -32,6 +20,9 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
     private var timer: Timer?
     private var completion: ((Result<URL, Error>) -> Void)?
     private var lastSpeedSample: (date: Date, bytes: Int64)?
+    private var lastUIUpdateDate = Date.distantPast
+    private var lastProgressLogDate = Date.distantPast
+    private let logger = DiagnosticsLogger.shared
     nonisolated(unsafe) private let taskStateLock = NSLock()
     private nonisolated(unsafe) var cancelledTaskIdentifiers: Set<Int> = []
     nonisolated(unsafe) static var backgroundEventsCompletionHandler: (() -> Void)?
@@ -61,6 +52,8 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
         expectedDuration = max(1, TimeInterval(recording.endTime - recording.startTime))
         startedAt = Date()
         lastSpeedSample = (startedAt, 0)
+        lastUIUpdateDate = .distantPast
+        lastProgressLogDate = .distantPast
         self.completion = completion
         startActivity(fileName: fileName)
 
@@ -69,6 +62,7 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
         task = session.downloadTask(with: request)
         task?.taskDescription = fileName
         task?.resume()
+        logger.info("DOWNLOAD", "后台任务已启动 task=\(task?.taskIdentifier ?? -1) recording=\(recording.id) duration=\(Int(expectedDuration))s")
         stateText = "正在下载"
         updateActivity()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -83,6 +77,7 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
             taskStateLock.unlock()
         }
         task?.cancel()
+        logger.info("DOWNLOAD", "取消后台任务 task=\(task?.taskIdentifier ?? -1) bytes=\(downloadedBytes) progress=\(Int(progress * 100))%")
         task = nil
         timer?.invalidate()
         timer = nil
@@ -101,8 +96,10 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
             try FileManager.default.removeItem(at: url)
             savedURL = nil
             stateText = "已删除下载"
+            logger.info("DOWNLOAD", "已删除下载文件 file=\(url.lastPathComponent)")
         } catch {
             stateText = "删除失败：\(error.localizedDescription)"
+            logger.error("DOWNLOAD", "删除下载文件失败 file=\(url.lastPathComponent) error=\(error.localizedDescription)")
         }
     }
 
@@ -139,9 +136,11 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
             savedURL = url
             stateText = "下载完成"
             endActivity(status: "下载完成", progress: 1)
+            logger.info("DOWNLOAD", "文件保存完成 file=\(url.lastPathComponent) bytes=\(downloadedBytes)")
         case let .failure(error):
             stateText = "下载失败：\(error.localizedDescription)"
             endActivity(status: "下载失败", progress: progress)
+            logger.error("DOWNLOAD", "后台下载失败 bytes=\(downloadedBytes) progress=\(Int(progress * 100))% error=\(error.localizedDescription)")
         }
         recordingID = nil
         let handler = completion
@@ -155,10 +154,23 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
     }
 
     private func startActivity(fileName: String) {
-        guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard #available(iOS 16.1, *) else {
+            logger.debug("LIVE_ACTIVITY", "系统版本低于 iOS 16.1，跳过下载实时活动")
+            return
+        }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            logger.warning("LIVE_ACTIVITY", "系统或用户未允许下载实时活动")
+            return
+        }
         let attributes = RecordingDownloadAttributes(fileName: fileName)
         let content = RecordingDownloadAttributes.ContentState(progress: 0, downloadedBytes: 0, status: "准备下载", speedText: "0 KB/s")
-        activity = try? Activity.request(attributes: attributes, contentState: content, pushType: nil)
+        do {
+            let requested = try Activity.request(attributes: attributes, contentState: content, pushType: nil)
+            activity = requested
+            logger.info("LIVE_ACTIVITY", "下载实时活动已创建 id=\(requested.id) file=\(fileName)")
+        } catch {
+            logger.error("LIVE_ACTIVITY", "创建下载实时活动失败 error=\(error.localizedDescription)")
+        }
     }
 
     private func updateActivity() {
@@ -181,6 +193,7 @@ final class RecordingDownloadManager: NSObject, ObservableObject {
             speedText: downloadSpeedText
         )
         Task { await activity.end(using: content, dismissalPolicy: .default) }
+        logger.info("LIVE_ACTIVITY", "实时活动结束 status=\(status) progress=\(Int(progress * 100))%")
         self.activity = nil
     }
 }
@@ -195,8 +208,10 @@ extension RecordingDownloadManager: URLSessionDownloadDelegate {
     ) {
         Task { @MainActor [weak self] in
             guard let self, downloadTask === self.task else { return }
-            self.downloadedBytes = totalBytesWritten
             let now = Date()
+            guard now.timeIntervalSince(self.lastUIUpdateDate) >= 0.5 else { return }
+            self.lastUIUpdateDate = now
+            self.downloadedBytes = totalBytesWritten
             if let sample = self.lastSpeedSample {
                 let elapsed = now.timeIntervalSince(sample.date)
                 if elapsed > 0.25 {
@@ -211,6 +226,10 @@ extension RecordingDownloadManager: URLSessionDownloadDelegate {
                 self.progress = min(0.99, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
             }
             self.updateActivity()
+            if now.timeIntervalSince(self.lastProgressLogDate) >= 5 {
+                self.lastProgressLogDate = now
+                self.logger.debug("DOWNLOAD", "下载进度 task=\(downloadTask.taskIdentifier) bytes=\(totalBytesWritten) expected=\(totalBytesExpectedToWrite) progress=\(Int(self.progress * 100))% speed=\(self.downloadSpeedText)")
+            }
         }
     }
 
@@ -225,6 +244,7 @@ extension RecordingDownloadManager: URLSessionDownloadDelegate {
         let handler = Self.backgroundEventsCompletionHandler
         Self.backgroundEventsCompletionHandler = nil
         DispatchQueue.main.async { handler?() }
+        DiagnosticsLogger.shared.info("DOWNLOAD", "后台 URLSession 事件已全部交付")
     }
 
     nonisolated func urlSession(
@@ -236,6 +256,7 @@ extension RecordingDownloadManager: URLSessionDownloadDelegate {
         let wasCancelled = cancelledTaskIdentifiers.remove(downloadTask.taskIdentifier) != nil
         taskStateLock.unlock()
         guard !wasCancelled else { return }
+        DiagnosticsLogger.shared.info("DOWNLOAD", "后台任务接收完成 task=\(downloadTask.taskIdentifier) temporary=present")
         do {
             let name = downloadTask.taskDescription ?? "摄像头录像.flv"
             let target = try Self.destination(for: name)

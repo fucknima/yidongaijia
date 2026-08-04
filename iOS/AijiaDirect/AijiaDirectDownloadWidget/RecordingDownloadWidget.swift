@@ -2,17 +2,6 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-struct RecordingDownloadAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
-        var progress: Double
-        var downloadedBytes: Int64
-        var status: String
-        var speedText: String
-    }
-
-    var fileName: String
-}
-
 @main
 struct RecordingDownloadWidgetBundle: WidgetBundle {
     var body: some Widget {

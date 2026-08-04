@@ -19,6 +19,8 @@
 		10000000000000000000000A /* RecordingDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* RecordingDownloadManager.swift */; };
 		10000000000000000000000B /* RecordingDownloadWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* RecordingDownloadWidget.swift */; };
 		10000000000000000000000C /* Widget extension in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* AijiaDirectDownloadWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		10000000000000000000000D /* RecordingDownloadAttributes.swift in App Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* RecordingDownloadAttributes.swift */; };
+		10000000000000000000000E /* RecordingDownloadAttributes.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* RecordingDownloadAttributes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +55,7 @@
 		200000000000000000000014 /* RecordingDownloadWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDownloadWidget.swift; sourceTree = "<group>"; };
 		200000000000000000000015 /* Widget Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		200000000000000000000016 /* AijiaDirectDownloadWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AijiaDirectDownloadWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000017 /* RecordingDownloadAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDownloadAttributes.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +116,7 @@
 				200000000000000000000010 /* DiagnosticsLogger.swift */,
 				200000000000000000000011 /* CredentialStore.swift */,
 				200000000000000000000013 /* RecordingDownloadManager.swift */,
+				200000000000000000000017 /* RecordingDownloadAttributes.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -264,6 +268,7 @@
 				100000000000000000000007 /* DiagnosticsLogger.swift in Sources */,
 				100000000000000000000008 /* CredentialStore.swift in Sources */,
 				10000000000000000000000A /* RecordingDownloadManager.swift in Sources */,
+				10000000000000000000000D /* RecordingDownloadAttributes.swift in App Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -275,7 +280,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		300000000000000000000009 /* Widget Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (10000000000000000000000B /* RecordingDownloadWidget.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		300000000000000000000009 /* Widget Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (10000000000000000000000B /* RecordingDownloadWidget.swift in Sources */, 10000000000000000000000E /* RecordingDownloadAttributes.swift in Widget Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
