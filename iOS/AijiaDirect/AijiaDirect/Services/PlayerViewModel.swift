@@ -43,7 +43,17 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var playbackTask: Task<Void, Never>?
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
-    private weak var drawable: UIView?
+    private let drawable: UIView = {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .black
+        view.isOpaque = true
+        view.clipsToBounds = true
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        return view
+    }()
+    private weak var inlineSurfaceHost: UIView?
+    private weak var fullscreenSurfaceHost: UIView?
+    private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
     private var shouldPlay = false
     private var reconnectInFlight = false
@@ -487,133 +497,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         logger.info("PLAYER", "历史回放结束，立即恢复实时流")
 
         let task = Task(priority: .userInitiated) { [weak self, client] in
-            guard let self = self else { return }
-
-            do {
-                try await client.stopReplay()
-            } catch {
-                self.logger.warning("REPLAY", "停止历史录像请求失败，继续恢复实时流 error=\(error.localizedDescription)")
-            }
-
-            guard self.isCurrentPlaybackOperation(operationID), self.shouldPlay else { return }
-
-            do {
-                let stream = try await client.openStream()
-                guard self.isCurrentPlaybackOperation(operationID),
-                      self.shouldPlay,
-                      self.api === client,
-                      !self.isReplay else { return }
-                self.cameraName = stream.camera.name
-                self.streamURL = stream.url
-                self.isLoading = false
-                self.isPlaying = true
-                self.hasError = false
-                self.status = "已回到实时流，正在本机播放"
-                self.logger.info("PLAYER", "历史回放后实时流恢复成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
-                self.preparePlayerIfPossible()
-                self.scheduleKeepAlive()
-            } catch {
-                guard self.isCurrentPlaybackOperation(operationID),
-                      self.shouldPlay,
-                      self.api === client,
-                      !self.isReplay else { return }
-                self.isLoading = false
-                self.isPlaying = false
-                self.hasError = true
-                self.status = "恢复实时画面失败：\(error.localizedDescription)"
-                self.logger.error("PLAYER", "历史回放后恢复实时流失败 error=\(error.localizedDescription)")
-            }
-        }
-        playbackTask = task
-    }
-
-    func seekReplay(to position: Double) {
-        guard isReplay, let client = api, isAuthenticated, let recording = replayRecording else {
-            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会话")
-            return
-        }
-
-        let clampedPosition = max(0.0, min(1.0, position))
-        let timestamp = recording.playbackTimestamp(for: clampedPosition)
-        replayPosition = Float(clampedPosition)
-        replayCurrentSecond = max(0, min(replayDurationSecond, timestamp - recording.startTime))
-        replaySeekTask?.cancel()
-        replaySeekGeneration &+= 1
-        let seekGeneration = replaySeekGeneration
-        let operationID = playbackOperationID
-        isLoading = true
-        isPlaying = false
-        hasError = false
-        replayProgressTimer?.invalidate()
-        replayProgressTimer = nil
-        player?.pause()
-        status = "正在跳转历史录像…"
-        logger.info(
-            "REPLAY",
-            "用户拖动回放进度 position=\(String(format: "%.4f", clampedPosition)) timestamp=\(timestamp)"
-        )
-
-        replaySeekTask = Task(priority: .userInitiated) { [weak self, client, operationID, seekGeneration] in
-            do {
-                try await client.seekRecording(at: timestamp)
-                // Let the server-side transfer settle before rebuilding VLC.
-                // Reopening immediately can attach to an empty response and
-                // leave the replay view black.
-                try await Task.sleep(nanoseconds: 500_000_000)
-                guard let self = self,
-                      self.api === client,
-                      self.isReplay,
-                      self.isCurrentPlaybackOperation(operationID),
-                      self.replaySeekGeneration == seekGeneration,
-                      !Task.isCancelled else { return }
-                self.replayPlaybackStartTime = timestamp
-                self.restartReplayPlayer()
-                self.isLoading = false
-                self.isPlaying = true
-                self.hasError = false
-                self.status = "正在播放内存卡录像"
-                self.logger.info("REPLAY", "历史录像跳转成功 timestamp=\(timestamp)")
-            } catch is CancellationError {
-                self?.logger.debug("REPLAY", "历史录像跳转请求已取消")
-            } catch {
-                guard let self = self,
-                      self.api === client,
-                      self.isReplay,
-                      self.isCurrentPlaybackOperation(operationID),
-                      self.replaySeekGeneration == seekGeneration else { return }
-                let committedTimestamp = self.replayPlaybackStartTime ?? recording.playbackStartTime
-                let committedSecond = max(0, min(self.replayDurationSecond, committedTimestamp - recording.startTime))
-                self.replayCurrentSecond = committedSecond
-                self.replayPosition = self.replayDurationSecond > 0
-                    ? Float(Double(committedSecond) / Double(self.replayDurationSecond))
-                    : 0
-                self.player?.play()
-                self.scheduleReplayProgressTimer()
-                self.isLoading = false
-                self.isPlaying = true
-                self.hasError = true
-                self.status = "历史录像跳转失败：\(error.localizedDescription)"
-                self.logger.error("REPLAY", "历史录像跳转失败 timestamp=\(timestamp) error=\(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func restartReplayPlayer() {
-        guard isReplay, let streamURL = streamURL else { return }
-        cancelReplayRateVerification()
-        replayProgressTimer?.invalidate()
-        replayProgressTimer = nil
-        logger.debug("REPLAY", "服务器回放定位成功，复用播放器恢复播放")
-        if let player = player {
-            player.delegate = nil
-            player.stop()
-            if let drawable = drawable {
-                player.drawable = drawable
-            }
-            player.media = VLCMedia(url: streamURL)
-            player.delegate = self
-            player.play()
-            applyReplayRate(to: player)
+            guard let self = self else …1474 tokens truncated…ate(to: player)
             scheduleReplayProgressTimer()
         } else {
             preparePlayerIfPossible()
@@ -724,75 +608,82 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayRateVerificationGeneration &+= 1
     }
 
-    func attach(to view: UIView) {
-        let viewChanged = drawable !== view
-        if viewChanged {
-            logger.debug("PLAYER", "播放器视图已挂载")
+    func mountPlayerSurface(in hostView: UIView, role: VLCPlayerSurfaceRole) {
+        switch role {
+        case .inline:
+            inlineSurfaceHost = hostView
+        case .fullscreen:
+            fullscreenSurfaceHost = hostView
         }
-        drawable = view
-        if viewChanged,
-           let currentPlayer = player,
-           let currentStreamURL = streamURL,
-           shouldPlay {
-            rebindPlayer(currentPlayer, to: view, streamURL: currentStreamURL)
-            return
-        }
-
-        player?.drawable = view
-        preparePlayerIfPossible()
+        activatePreferredPlayerSurface()
     }
 
-    func refreshDrawable(for view: UIView) {
-        guard drawable === view,
-              view.bounds.width > 1,
-              view.bounds.height > 1 else { return }
+    func layoutPlayerSurface(in hostView: UIView) {
+        guard activeSurfaceHost === hostView, drawable.superview === hostView else { return }
+        let targetBounds = hostView.bounds
+        guard targetBounds.width > 1, targetBounds.height > 1 else { return }
 
-        // MobileVLCKit binds the video output to the UIView instance. Reapply
-        // the same drawable after SwiftUI/iOS finishes a rotation/layout pass;
-        // this is intentionally lightweight and does not recreate the media.
-        player?.drawable = view
-        if player == nil {
-            preparePlayerIfPossible()
+        let sizeChanged = drawable.bounds.size != targetBounds.size
+        if drawable.frame != targetBounds {
+            UIView.performWithoutAnimation {
+                drawable.frame = targetBounds
+                drawable.layoutIfNeeded()
+            }
+        }
+        if sizeChanged {
+            player?.drawable = drawable
         }
     }
 
-    func detach(from view: UIView) {
-        guard drawable === view else { return }
-        logger.debug("PLAYER", "播放器视图已卸载")
-        drawable = nil
-        cancelReplayRateVerification()
-        replayProgressTimer?.invalidate()
-        replayProgressTimer = nil
-        player?.delegate = nil
-        player?.stop()
-        player = nil
+    func unmountPlayerSurface(from hostView: UIView, role: VLCPlayerSurfaceRole) {
+        switch role {
+        case .inline:
+            if inlineSurfaceHost === hostView {
+                inlineSurfaceHost = nil
+            }
+        case .fullscreen:
+            if fullscreenSurfaceHost === hostView {
+                fullscreenSurfaceHost = nil
+            }
+        }
+        activatePreferredPlayerSurface()
     }
 
     func refreshPlayerView() {
         playerViewID = UUID()
     }
 
-    private func rebindPlayer(_ player: VLCMediaPlayer, to view: UIView, streamURL: URL) {
-        cancelReplayRateVerification()
-        replayProgressTimer?.invalidate()
-        replayProgressTimer = nil
-        player.delegate = nil
-        player.stop()
-        player.drawable = view
-        player.media = VLCMedia(url: streamURL)
-        player.delegate = self
-        player.play()
-        if isReplay {
-            applyReplayRate(to: player)
-            scheduleReplayProgressTimer()
+    private func activatePreferredPlayerSurface() {
+        guard let hostView = fullscreenSurfaceHost ?? inlineSurfaceHost else {
+            if activeSurfaceHost != nil {
+                drawable.removeFromSuperview()
+                activeSurfaceHost = nil
+                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运行")
+            }
+            return
         }
+
+        let hostChanged = activeSurfaceHost !== hostView || drawable.superview !== hostView
+        activeSurfaceHost = hostView
+        if hostChanged {
+            drawable.removeFromSuperview()
+            drawable.frame = hostView.bounds
+            hostView.insertSubview(drawable, at: 0)
+            logger.debug("PLAYER", "播放器输出面已挂载到新宿主")
+
+            // The drawable UIView itself never changes. Reapplying that same
+            // instance lets VLC refresh its layout without reopening media.
+            player?.drawable = drawable
+        }
+
+        layoutPlayerSurface(in: hostView)
+        preparePlayerIfPossible()
     }
 
     private func preparePlayerIfPossible() {
-        guard shouldPlay, let streamURL = streamURL, let drawable = drawable else { return }
+        guard shouldPlay, let streamURL = streamURL, activeSurfaceHost != nil else { return }
 
         if let player = player {
-            player.drawable = drawable
             if isReplay {
                 applyReplayRate(to: player)
                 scheduleReplayProgressTimer()
@@ -971,19 +862,19 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func resumeReplayAfterForeground() {
         guard isReplay, streamURL != nil else { return }
 
-        if let player = player, let drawable = drawable {
+        if let player = player {
             player.drawable = drawable
             player.play()
             applyReplayRate(to: player)
             isPlaying = true
             hasError = false
             scheduleReplayProgressTimer()
-        } else if drawable != nil {
+        } else if activeSurfaceHost != nil {
             preparePlayerIfPossible()
             isPlaying = player != nil
         } else {
             // SwiftUI may detach the representable while the app is backgrounded.
-            // Force a fresh view so attach(to:) can create a player with a valid drawable.
+            // Force a fresh host so mountPlayerSurface(in:role:) can resume output.
             playerViewID = UUID()
             isPlaying = false
             logger.debug("REPLAY", "回到前台时播放器视图已卸载，等待重新挂载")

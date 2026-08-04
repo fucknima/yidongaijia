@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import AijiaDirect
 
 final class AijiaDirectTests: XCTestCase {
@@ -189,6 +190,55 @@ final class AijiaDirectTests: XCTestCase {
         XCTAssertTrue(model.hasError)
         XCTAssertTrue(model.shouldShowLogin)
         XCTAssertEqual(credentialStore.saveCallCount, 0)
+    }
+
+    @MainActor
+    func testPlayerSurfaceMovesBetweenHostsWithoutBeingRecreated() {
+        let model = PlayerViewModel(
+            credentialStore: StubCredentialStore(),
+            makeAPIClient: { _, _, _ in
+                StubAijiaAPIClient(openStreamResult: .failure(StubAPIError.failed))
+            }
+        )
+        let inlineHost = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 180))
+        let fullscreenHost = UIView(frame: CGRect(x: 0, y: 0, width: 844, height: 390))
+
+        model.mountPlayerSurface(in: inlineHost, role: .inline)
+        guard let playerSurface = inlineHost.subviews.first else {
+            return XCTFail("Expected the inline host to contain the player surface")
+        }
+        XCTAssertEqual(playerSurface.frame, inlineHost.bounds)
+
+        model.mountPlayerSurface(in: fullscreenHost, role: .fullscreen)
+        XCTAssertTrue(inlineHost.subviews.isEmpty)
+        XCTAssertTrue(fullscreenHost.subviews.first === playerSurface)
+        XCTAssertEqual(playerSurface.frame, fullscreenHost.bounds)
+
+        // Inline updates continue while the cover is presented; fullscreen
+        // must retain priority until its host actually disappears.
+        model.mountPlayerSurface(in: inlineHost, role: .inline)
+        XCTAssertTrue(playerSurface.superview === fullscreenHost)
+
+        model.unmountPlayerSurface(from: fullscreenHost, role: .fullscreen)
+        XCTAssertTrue(playerSurface.superview === inlineHost)
+
+        model.mountPlayerSurface(in: fullscreenHost, role: .fullscreen)
+        XCTAssertTrue(playerSurface.superview === fullscreenHost)
+
+        // A late dismantle callback from the old SwiftUI host must not remove
+        // the surface that has already moved into the fullscreen host.
+        model.unmountPlayerSurface(from: inlineHost, role: .inline)
+        XCTAssertTrue(playerSurface.superview === fullscreenHost)
+
+        fullscreenHost.bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        model.layoutPlayerSurface(in: fullscreenHost)
+        XCTAssertEqual(playerSurface.frame, fullscreenHost.bounds)
+
+        model.unmountPlayerSurface(from: fullscreenHost, role: .fullscreen)
+        XCTAssertNil(playerSurface.superview)
+
+        model.mountPlayerSurface(in: inlineHost, role: .inline)
+        XCTAssertTrue(inlineHost.subviews.first === playerSurface)
     }
 
     @MainActor

@@ -151,10 +151,9 @@ private struct PlayerScreen: View {
                             .frame(width: 10, height: 10)
                     }
 
-                    // Only one VLC drawable is mounted at a time. The inline
-                    // view is replaced by the full-screen view during the
-                    // cover transition, then attached again on dismissal.
-                    if !showingFullscreen, model.streamURL != nil, !model.isReplay {
+                    // SwiftUI may replace this host during presentation, but
+                    // the model keeps one persistent VLC drawable throughout.
+                    if model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
@@ -282,7 +281,7 @@ private struct FullscreenPlayerView: View {
             Color.black
                 .ignoresSafeArea()
 
-            VLCPlayerView(model: model)
+            VLCPlayerView(model: model, role: .fullscreen)
                 .id(model.playerViewID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
@@ -291,10 +290,8 @@ private struct FullscreenPlayerView: View {
             if model.isReplay {
                 VStack {
                     Spacer()
-                    ReplayControls(model: model)
+                    ReplayControls(model: model, presentation: .fullscreen)
                         .frame(maxWidth: .infinity)
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(2)
@@ -312,6 +309,8 @@ private struct FullscreenPlayerView: View {
             .padding()
         }
         .statusBar(hidden: true)
+        .interactiveDismissDisabled()
+        .preferredColorScheme(.dark)
         .onAppear {
             DispatchQueue.main.async {
                 ScreenOrientation.lockLandscape()
@@ -584,60 +583,46 @@ private struct UpdateLogView: View {
     }
 }
 
+private enum ReplayControlsPresentation: Equatable {
+    case inline
+    case fullscreen
+}
+
 private struct ReplayControls: View {
     @ObservedObject var model: PlayerViewModel
+    let presentation: ReplayControlsPresentation
     @State private var sliderValue = 0.0
     @State private var isEditing = false
 
     private let rates: [Float] = [0.5, 1.0, 2.0, 3.0, 5.0]
 
+    init(
+        model: PlayerViewModel,
+        presentation: ReplayControlsPresentation = .inline
+    ) {
+        self.model = model
+        self.presentation = presentation
+    }
+
     var body: some View {
-        GroupBox {
-            VStack(spacing: 8) {
-                HStack {
-                    Text(formatTime(model.replayCurrentSecond))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(formatTime(model.replayDurationSecond))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-
-                Slider(
-                    value: $sliderValue,
-                    in: 0...1,
-                    onEditingChanged: { editing in
-                        isEditing = editing
-                        if editing {
-                            sliderValue = Double(model.replayPosition)
-                        } else {
-                            model.seekReplay(to: sliderValue)
-                        }
-                    }
-                )
-                .disabled(model.isLoading || model.replayDurationSecond <= 0)
-
-                HStack {
-                    Label("内存卡回放", systemImage: "play.rectangle")
-                        .font(.subheadline)
-                    Spacer()
-                    Menu {
-                        ForEach(rates, id: \.self) { rate in
-                            Button {
-                                model.setReplayRate(rate)
-                            } label: {
-                                if abs(model.replayRate - rate) < 0.01 {
-                                    Label(rateLabel(rate), systemImage: "checkmark")
-                                } else {
-                                    Text(rateLabel(rate))
-                                }
-                            }
-                        }
-                    } label: {
-                        Label(rateLabel(model.replayRate), systemImage: "speedometer")
-                    }
-                    .disabled(model.isLoading)
+        Group {
+            if presentation == .fullscreen {
+                controlsContent
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 10)
+                    .foregroundStyle(.white)
+                    .tint(.white)
+                    .background(
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.78)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            } else {
+                GroupBox {
+                    controlsContent
                 }
             }
         }
@@ -649,6 +634,60 @@ private struct ReplayControls: View {
                 sliderValue = Double(value)
             }
         }
+    }
+
+    private var controlsContent: some View {
+        VStack(spacing: presentation == .fullscreen ? 6 : 8) {
+            HStack {
+                Text(formatTime(model.replayCurrentSecond))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryForegroundColor)
+                Spacer()
+                Text(formatTime(model.replayDurationSecond))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(secondaryForegroundColor)
+            }
+
+            Slider(
+                value: $sliderValue,
+                in: 0...1,
+                onEditingChanged: { editing in
+                    isEditing = editing
+                    if editing {
+                        sliderValue = Double(model.replayPosition)
+                    } else {
+                        model.seekReplay(to: sliderValue)
+                    }
+                }
+            )
+            .disabled(model.isLoading || model.replayDurationSecond <= 0)
+
+            HStack {
+                Label("内存卡回放", systemImage: "play.rectangle")
+                    .font(.subheadline)
+                Spacer()
+                Menu {
+                    ForEach(rates, id: \.self) { rate in
+                        Button {
+                            model.setReplayRate(rate)
+                        } label: {
+                            if abs(model.replayRate - rate) < 0.01 {
+                                Label(rateLabel(rate), systemImage: "checkmark")
+                            } else {
+                                Text(rateLabel(rate))
+                            }
+                        }
+                    }
+                } label: {
+                    Label(rateLabel(model.replayRate), systemImage: "speedometer")
+                }
+                .disabled(model.isLoading)
+            }
+        }
+    }
+
+    private var secondaryForegroundColor: Color {
+        presentation == .fullscreen ? .white.opacity(0.78) : .secondary
     }
 
     private func formatTime(_ seconds: Int64) -> String {
@@ -752,7 +791,7 @@ private struct HistoryView: View {
                     }
                 }
 
-                if !showingFullscreen, model.isReplay, model.streamURL != nil {
+                if model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("正在回放")
                             .font(.headline)
