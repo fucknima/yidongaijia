@@ -3058,6 +3058,7 @@ static int is_realtime(AVFormatContext *s)
 }
 
 /* this thread gets the stream from the disk or the network */
+static void ffp_record_write_packet_l(FFPlayer *ffp, AVPacket *pkt, AVFormatContext *ic);
 static int read_thread(void *arg)
 {
     FFPlayer *ffp = arg;
