@@ -786,9 +786,9 @@ private struct FullscreenPlayerView: View {
         guard model.isReplay else { return }
         hideReplayControlsTask?.cancel()
         hideReplayControlsTask = nil
-        hideReplayControlsTask = Task { @MainActor [weak self] in
+        hideReplayControlsTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard let self = self, !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.25)) {
                 self.replayControlsVisible = false
             }
