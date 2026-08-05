@@ -16,6 +16,7 @@
 		100000000000000000000007 /* DiagnosticsLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000010 /* DiagnosticsLogger.swift */; };
 		100000000000000000000008 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* CredentialStore.swift */; };
 		100000000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* Assets.xcassets */; };
+		10000000000000000000000A /* MediaLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* MediaLibrary.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +42,7 @@
 		200000000000000000000010 /* DiagnosticsLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsLogger.swift; sourceTree = "<group>"; };
 		200000000000000000000011 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		200000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		200000000000000000000013 /* MediaLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaLibrary.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +100,7 @@
 				200000000000000000000004 /* PlayerViewModel.swift */,
 				200000000000000000000010 /* DiagnosticsLogger.swift */,
 				200000000000000000000011 /* CredentialStore.swift */,
+				200000000000000000000013 /* MediaLibrary.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 				100000000000000000000005 /* VLCPlayerView.swift in Sources */,
 				100000000000000000000007 /* DiagnosticsLogger.swift in Sources */,
 				100000000000000000000008 /* CredentialStore.swift in Sources */,
+				10000000000000000000000A /* MediaLibrary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
