@@ -49,7 +49,6 @@ private struct LoginView: View {
     private enum Field: Hashable {
         case phone
         case password
-        case camera
     }
 
     var body: some View {
@@ -76,14 +75,6 @@ private struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .password)
 
-                            if model.cameras.isEmpty {
-                                TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
-                                    .textFieldStyle(.roundedBorder)
-                                    .focused($focusedField, equals: .camera)
-                            } else {
-                                CameraSelectionList(model: model)
-                            }
-
                             Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
 
@@ -96,7 +87,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录…" : (model.cameraSelector.isEmpty ? "登录并读取摄像头" : "登录并播放"))
+                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -144,33 +135,71 @@ private struct LoginView: View {
     }
 }
 
-private struct CameraSelectionList: View {
+private struct CameraSelectionPage: View {
     @ObservedObject var model: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        GroupBox("选择摄像头") {
-            VStack(spacing: 8) {
-                ForEach(model.cameras) { camera in
-                    Button {
-                        model.playCamera(camera)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(camera.name)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(camera.macID)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if model.selectedCameraID == camera.macID {
-                                Image(systemName: "checkmark.circle.fill")
-                            }
-                        }
+        List {
+            Section {
+                if model.cameras.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "video.slash")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text("暂无摄像头")
+                            .font(.headline)
+                        Text("请先登录并读取账号下的摄像头。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    ForEach(model.cameras) { camera in
+                        Button {
+                            DiagnosticsLogger.shared.info(
+                                "UI",
+                                "用户在独立摄像头选择页选择设备 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))"
+                            )
+                            model.playCamera(camera)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(camera.name)
+                                        .font(.headline)
+                                    Text(camera.macID)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if model.selectedCameraID == camera.macID {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Text("请选择要播放的摄像头")
+            }
+        }
+        .navigationTitle("选择摄像头")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("返回") {
+                    DiagnosticsLogger.shared.info("UI", "用户从独立摄像头选择页返回播放页")
+                    dismiss()
                 }
             }
+        }
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择页 count=\(model.cameras.count)")
         }
     }
 }
@@ -202,6 +231,7 @@ private struct PlayerScreen: View {
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
     @State private var showingAbout = false
+    @State private var showingCameraSelection = false
 
     var body: some View {
         NavigationView {
@@ -258,10 +288,6 @@ private struct PlayerScreen: View {
 
                     StatusText(model: model)
 
-                    if model.isAuthenticated, model.streamURL == nil, !model.cameras.isEmpty {
-                        CameraSelectionList(model: model)
-                    }
-
                     if model.isAuthenticated {
                         PTZControlPanel(model: model)
 
@@ -291,21 +317,13 @@ private struct PlayerScreen: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Text("版本 \(AppVersionInfo.display)")
-                        if !model.cameras.isEmpty {
-                            Section("摄像头") {
-                                ForEach(model.cameras) { camera in
-                                    Button {
-                                        model.playCamera(camera)
-                                    } label: {
-                                        if model.selectedCameraID == camera.macID {
-                                            Label(camera.name, systemImage: "checkmark")
-                                        } else {
-                                            Text(camera.name)
-                                        }
-                                    }
-                                }
-                            }
+                        Button {
+                            DiagnosticsLogger.shared.info("UI", "用户从更多操作打开独立摄像头选择页")
+                            showingCameraSelection = true
+                        } label: {
+                            Label("选择摄像头", systemImage: "video.badge.plus")
                         }
+                        .disabled(model.cameras.isEmpty)
                         Button {
                             DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
                             showingAbout = true
@@ -332,6 +350,11 @@ private struct PlayerScreen: View {
         .sheet(isPresented: $showingAbout) {
             NavigationView {
                 AboutView()
+            }
+        }
+        .sheet(isPresented: $showingCameraSelection) {
+            NavigationView {
+                CameraSelectionPage(model: model)
             }
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
