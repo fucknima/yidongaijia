@@ -237,7 +237,7 @@ else
         $FFMPEG_CFG_FLAGS \
         --cc="$FF_XCRUN_CC" \
         $FFMPEG_CFG_CPU \
-        --extra-cflags="$FFMPEG_CFLAGS" \
+        --extra-cflags="$FFMPEG_CFLAGS -Wno-error=incompatible-function-pointer-types -Wno-error=implicit-function-declaration" \
         --extra-cxxflags="$FFMPEG_CFLAGS" \
         --extra-ldflags="$FFMPEG_LDFLAGS $FFMPEG_DEP_LIBS"
     make clean
