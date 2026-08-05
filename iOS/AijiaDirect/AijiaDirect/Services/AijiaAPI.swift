@@ -187,7 +187,9 @@ private func aijiaStringValue(_ value: Any?) -> String {
 }
 
 protocol AijiaAPIClient: AnyObject {
+    func listCameras() async throws -> [AijiaCamera]
     func openStream() async throws -> AijiaStream
+    func openStream(cameraSelector: String) async throws -> AijiaStream
     func keepAlive() async throws
     func controlPTZ(direction: AijiaPTZDirection) async throws
     func queryRecordings(startTime: Int64, endTime: Int64) async throws -> [AijiaRecording]
@@ -208,7 +210,7 @@ final class AijiaAPI: AijiaAPIClient {
 
     private let phone: String
     private let password: String?
-    private let cameraSelector: String
+    private var cameraSelector: String
     // Persist a stable device UUID for the base and video sessions.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
     private let session: URLSession
@@ -252,6 +254,19 @@ final class AijiaAPI: AijiaAPIClient {
             "API",
             "初始化客户端 account=\(DiagnosticsLogger.maskPhone(phone)) cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
         )
+    }
+
+    func listCameras() async throws -> [AijiaCamera] {
+        if videoToken.isEmpty {
+            try await loginVideo()
+        }
+        return try cameraList().map { try AijiaCamera($0) }
+    }
+
+    func openStream(cameraSelector: String) async throws -> AijiaStream {
+        self.cameraSelector = AijiaSigning.normalized(cameraSelector)
+        camera = nil
+        return try await openStream()
     }
 
     func openStream() async throws -> AijiaStream {
