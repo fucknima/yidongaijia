@@ -167,7 +167,7 @@ final class AijiaDirectTests: XCTestCase {
         XCTAssertEqual(model.cameraName, "Front Door")
         XCTAssertEqual(model.streamURL, URL(string: "https://example.test/live.flv"))
         XCTAssertEqual(credentialStore.savedLogin?.phone, "13800138000")
-        XCTAssertEqual(credentialStore.savedLogin?.cameraSelector, "front-door")
+        XCTAssertEqual(credentialStore.savedLogin?.cameraSelector, "camera-mac")
         model.stop()
     }
 
@@ -185,7 +185,8 @@ final class AijiaDirectTests: XCTestCase {
         model.start()
         await waitUntil { !model.isLoading }
 
-        XCTAssertEqual(apiClient.openStreamCallCount, 1)
+        XCTAssertEqual(apiClient.listCamerasCallCount, 1)
+        XCTAssertEqual(apiClient.openStreamCallCount, 0)
         XCTAssertFalse(model.isAuthenticated)
         XCTAssertTrue(model.hasError)
         XCTAssertTrue(model.shouldShowLogin)
@@ -326,13 +327,24 @@ private enum StubAPIError: LocalizedError {
 
 private final class StubAijiaAPIClient: AijiaAPIClient {
     let openStreamResult: Result<AijiaStream, Error>
+    private(set) var listCamerasCallCount = 0
     private(set) var openStreamCallCount = 0
 
     init(openStreamResult: Result<AijiaStream, Error>) {
         self.openStreamResult = openStreamResult
     }
 
+    func listCameras() async throws -> [AijiaCamera] {
+        listCamerasCallCount += 1
+        return [try openStreamResult.get().camera]
+    }
+
     func openStream() async throws -> AijiaStream {
+        openStreamCallCount += 1
+        return try openStreamResult.get()
+    }
+
+    func openStream(cameraSelector: String) async throws -> AijiaStream {
         openStreamCallCount += 1
         return try openStreamResult.get()
     }
