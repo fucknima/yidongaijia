@@ -84,6 +84,7 @@
 				400000000000000000000005 /* Views */,
 				400000000000000000000008 /* Resources */,
 				200000000000000000000009 /* Info.plist */,
+				200000000000000000000012 /* Assets.xcassets */,
 			);
 			path = AijiaDirect;
 			sourceTree = "<group>";
