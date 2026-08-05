@@ -31,7 +31,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var replayPosition: Float = 0
     @Published private(set) var replayCurrentSecond: Int64 = 0
     @Published private(set) var replayDurationSecond: Int64 = 0
-    @Published private(set) var replayRate: Float = 1.0
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
@@ -44,8 +43,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var replaySeekTask: Task<Void, Never>?
     private var replaySeekGeneration = 0
     private var replayProgressTimer: Timer?
-    private var replayRateVerificationTask: Task<Void, Never>?
-    private var replayRateVerificationGeneration = 0
     private var recordingsTask: Task<Void, Never>?
     private var recordingsQueryGeneration = 0
     private var recordingsQueryKey: String?
@@ -358,7 +355,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
         if isReplay {
-            cancelReplayRateVerification()
             replaySeekTask?.cancel()
             replaySeekTask = nil
             replaySeekGeneration &+= 1
@@ -738,7 +734,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     private func restartReplayPlayer() {
         guard isReplay, let streamURL = streamURL else { return }
-        cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         logger.debug("REPLAY", "服务器回放定位成功，复用播放器恢复播放")
@@ -749,115 +744,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             player.media = VLCMedia(url: streamURL)
             player.delegate = self
             player.play()
-            applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         } else {
             preparePlayerIfPossible()
         }
-    }
-
-    func setReplayRate(_ rate: Float) {
-        guard isReplay else { return }
-        let clampedRate = min(max(rate, 0.5), 5.0)
-        cancelReplayRateVerification()
-        replayRate = clampedRate
-        if let player = player {
-            applyReplayRate(to: player)
-        } else {
-            logger.debug("REPLAY", "播放器尚未创建，待开始输出时应用回放倍速 rate=\(String(format: "%.1f", clampedRate))")
-        }
-        status = "正在播放内存卡录像"
-        logger.info("REPLAY", "用户调整回放倍速 rate=\(String(format: "%.1f", clampedRate))")
-    }
-
-    private func applyReplayRate(to player: VLCMediaPlayer) {
-        guard isReplay else { return }
-
-        let requestedRate = replayRate
-        player.rate = requestedRate
-        logger.debug(
-            "REPLAY",
-            "应用回放倍速 requested=\(String(format: "%.1f", requestedRate)) " +
-                "playerRate=\(String(format: "%.1f", player.rate)) " +
-                "playing=\(player.isPlaying) seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-        )
-
-        guard player.isPlaying, abs(requestedRate - 1.0) > 0.01 else { return }
-        scheduleReplayRateVerification(for: player)
-    }
-
-    private func scheduleReplayRateVerification(for player: VLCMediaPlayer) {
-        replayRateVerificationTask?.cancel()
-        replayRateVerificationTask = nil
-        guard isReplay, player.isPlaying, abs(replayRate - 1.0) > 0.01 else { return }
-
-        replayRateVerificationGeneration &+= 1
-        let verificationID = replayRateVerificationGeneration
-        let operationID = playbackOperationID
-        let requestedRate = replayRate
-        let baselineMilliseconds = max(0, Int64(player.time.intValue))
-        let baselineDate = Date()
-
-        replayRateVerificationTask = Task { [weak self, weak player, operationID, verificationID, requestedRate, baselineMilliseconds, baselineDate] in
-            do {
-                try await Task.sleep(nanoseconds: 2_000_000_000)
-            } catch {
-                return
-            }
-
-            guard let self = self,
-                  let player = player,
-                  self.isReplay,
-                  self.player === player,
-                  self.isCurrentPlaybackOperation(operationID),
-                  self.replayRateVerificationGeneration == verificationID,
-                  abs(self.replayRate - requestedRate) < 0.01,
-                  player.isPlaying,
-                  !Task.isCancelled else {
-                return
-            }
-
-            let elapsed = max(Date().timeIntervalSince(baselineDate), 0.1)
-            let deltaMilliseconds = max(0, Int64(player.time.intValue) - baselineMilliseconds)
-            guard deltaMilliseconds >= 250 else {
-                self.logger.warning(
-                    "REPLAY",
-                    "倍速验证没有足够的时间进度 requested=\(String(format: "%.1f", requestedRate)) " +
-                        "playerRate=\(String(format: "%.1f", player.rate)) " +
-                        "seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-                )
-                self.replayRateVerificationTask = nil
-                return
-            }
-
-            let observedRate = Double(deltaMilliseconds) / 1_000.0 / elapsed
-            let tolerance = max(0.35, Double(requestedRate) * 0.30)
-            self.logger.debug(
-                "REPLAY",
-                "倍速验证 requested=\(String(format: "%.1f", requestedRate)) " +
-                    "observed=\(String(format: "%.2f", observedRate)) " +
-                    "playerRate=\(String(format: "%.1f", player.rate)) " +
-                    "seekable=\(player.isSeekable) hasVideoOut=\(player.hasVideoOut)"
-            )
-
-            if abs(observedRate - Double(requestedRate)) > tolerance {
-                player.rate = 1.0
-                self.replayRate = 1.0
-                self.status = "当前回放流不支持该倍速，已回退到 1x"
-                self.logger.warning(
-                    "REPLAY",
-                    "回放流未按请求倍速播放，已回退到 1x requested=\(String(format: "%.1f", requestedRate)) " +
-                        "observed=\(String(format: "%.2f", observedRate))"
-                )
-            }
-            self.replayRateVerificationTask = nil
-        }
-    }
-
-    private func cancelReplayRateVerification() {
-        replayRateVerificationTask?.cancel()
-        replayRateVerificationTask = nil
-        replayRateVerificationGeneration &+= 1
     }
 
     func mountPlayerSurface(in hostView: UIView, role: VLCPlayerSurfaceRole) {
@@ -939,7 +829,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
         if let player = player {
             if isReplay {
-                applyReplayRate(to: player)
                 scheduleReplayProgressTimer()
             }
             return
@@ -956,7 +845,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         player.play()
         scheduleNetworkSpeedTimer()
         if isReplay {
-            applyReplayRate(to: player)
             scheduleReplayProgressTimer()
         }
     }
@@ -1202,7 +1090,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             if let player = player {
                 player.drawable = drawable
                 player.play()
-                applyReplayRate(to: player)
                 isPlaying = true
                 hasError = false
                 scheduleReplayProgressTimer()
@@ -1307,7 +1194,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastNetworkReceivedBytes = nil
         lastNetworkSpeedSampleDate = nil
         networkSpeedText = "-- KB/s"
-        cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         if player != nil {
@@ -1319,7 +1205,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func resetReplayPlaybackState() {
-        cancelReplayRateVerification()
         replaySeekTask?.cancel()
         replaySeekTask = nil
         replayBackgroundedAt = nil
@@ -1330,7 +1215,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayPosition = 0
         replayCurrentSecond = 0
         replayDurationSecond = 0
-        replayRate = 1.0
     }
 
     private func cancelRecordingsQuery() {
@@ -1343,7 +1227,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func beginPlaybackOperation() -> Int {
-        cancelReplayRateVerification()
         playbackTask?.cancel()
         playbackTask = nil
         replayCleanupTask?.cancel()
@@ -1417,7 +1300,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isPlaying = true
         hasError = false
         if isReplay {
-            applyReplayRate(to: currentPlayer)
             scheduleReplayProgressTimer()
         }
         logger.info("PLAYER", "VLC 已开始输出视频")
