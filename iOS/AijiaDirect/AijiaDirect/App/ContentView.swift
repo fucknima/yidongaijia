@@ -1375,11 +1375,11 @@ private struct DiagnosticsView: View {
                 .accessibilityLabel("日志操作")
             }
         }
-        .fullScreenCover(isPresented: $showingShareSheet, onDismiss: {
+        .sheet(isPresented: $showingShareSheet, onDismiss: {
             diagnosticsURL = nil
         }) {
             if let diagnosticsURL = diagnosticsURL {
-                ActivityView(activityItems: [diagnosticsURL], isPresented: $showingShareSheet)
+                EmbeddedActivityView(activityItems: [diagnosticsURL])
             }
         }
     }
@@ -1631,9 +1631,16 @@ private struct ActivityView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIViewController, context: Context) {
-        // UIActivityViewController must be presented modally; embedding its
-        // view directly in a sheet renders as an empty blank panel.
-        if isPresented, !context.coordinator.presented {
+        guard isPresented, !context.coordinator.presented else { return }
+
+        // Defer until the container view controller is attached to the window
+        // hierarchy; presenting immediately leaves the share panel invisible.
+        context.coordinator.presented = true
+        DispatchQueue.main.async { [weak controller] in
+            guard let controller = controller, controller.presentedViewController == nil else {
+                context.coordinator.presented = false
+                return
+            }
             let activity = UIActivityViewController(
                 activityItems: activityItems,
                 applicationActivities: nil
@@ -1643,7 +1650,19 @@ private struct ActivityView: UIViewControllerRepresentable {
                 isPresented = false
             }
             controller.present(activity, animated: true)
-            context.coordinator.presented = true
         }
     }
+}
+
+/// Embeds a UIActivityViewController directly as sheet content. This works on
+/// some iOS versions for plain documents and keeps the diagnostics export
+/// flow unchanged from the original working build.
+private struct EmbeddedActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
