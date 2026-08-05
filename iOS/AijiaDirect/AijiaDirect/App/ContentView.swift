@@ -4,6 +4,7 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var model: PlayerViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var theme = ThemeStore.shared
     @State private var showingCameraSelection = false
 
     var body: some View {
@@ -14,7 +15,7 @@ struct ContentView: View {
                 PlayerScreen(model: model)
             }
         }
-        .tint(AppTheme.accent)
+        .tint(theme.accent.color)
         .onAppear {
             model.autoConnectIfSaved()
             presentCameraSelectionIfNeeded()
@@ -49,8 +50,68 @@ struct ContentView: View {
 
 // MARK: - Theme
 
+private enum AppAccent: String, CaseIterable, Identifiable {
+    case teal
+    case blue
+    case indigo
+    case purple
+    case pink
+    case orange
+    case green
+    case red
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .teal: return "青绿"
+        case .blue: return "蓝色"
+        case .indigo: return "靛蓝"
+        case .purple: return "紫色"
+        case .pink: return "粉色"
+        case .orange: return "橙色"
+        case .green: return "绿色"
+        case .red: return "红色"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .teal: return Color(red: 0.11, green: 0.60, blue: 0.53)
+        case .blue: return .blue
+        case .indigo: return .indigo
+        case .purple: return .purple
+        case .pink: return .pink
+        case .orange: return .orange
+        case .green: return .green
+        case .red: return .red
+        }
+    }
+}
+
+private final class ThemeStore: ObservableObject {
+    static let shared = ThemeStore()
+
+    private static let accentKey = "appearance.accent"
+
+    @Published var accent: AppAccent {
+        didSet {
+            UserDefaults.standard.set(accent.rawValue, forKey: Self.accentKey)
+            DiagnosticsLogger.shared.info("UI", "用户切换主题色 accent=\(accent.rawValue)")
+        }
+    }
+
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Self.accentKey)
+        accent = AppAccent(rawValue: saved ?? "") ?? .teal
+    }
+}
+
 private enum AppTheme {
-    static let accent = Color(red: 0.11, green: 0.60, blue: 0.53)
+    static var accent: Color {
+        ThemeStore.shared.accent.color
+    }
+
     static let cardRadius: CGFloat = 16
 
     static var cardBackground: Color {
@@ -78,7 +139,7 @@ private struct AppMark: View {
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [AppTheme.accent, Color(red: 0.05, green: 0.42, blue: 0.36)],
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -317,6 +378,8 @@ private struct CameraSelectionMenuButton: View {
 }
 
 private struct AboutView: View {
+    @ObservedObject private var theme = ThemeStore.shared
+
     var body: some View {
         List {
             Section {
@@ -330,6 +393,32 @@ private struct AboutView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
+            }
+
+            Section("主题色") {
+                HStack(spacing: 16) {
+                    ForEach(AppAccent.allCases) { accent in
+                        Button {
+                            theme.accent = accent
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(accent.color)
+                                    .frame(width: 30, height: 30)
+                                if theme.accent == accent {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(width: 40, height: 40)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("主题色\(accent.title)")
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
 
             Section("项目介绍") {
@@ -360,6 +449,10 @@ private struct AboutView: View {
                 Text("Copyright © 2026 fucknima")
                     .foregroundStyle(.secondary)
                 Link("查看完整许可协议", destination: URL(string: "https://github.com/fucknima/yidongaijia/blob/main/LICENSE")!)
+            }
+
+            Section("免责声明") {
+                Text("本项目是移动爱家的第三方 iOS 客户端，不是中国移动、移动爱家或其关联公司的官方应用、SDK，也不代表上述任何一方。请只在你有权使用的账号和摄像头上运行。云端接口、签名规则和服务策略可能变化；本项目不提供或绕过官方授权，也不保证接口长期稳定。")
             }
         }
         .listStyle(.insetGrouped)
@@ -599,6 +692,8 @@ private struct PlayerSurface: View {
 private struct FullscreenPlayerView: View {
     @ObservedObject var model: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var replayControlsVisible = true
+    @State private var hideReplayControlsTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -610,6 +705,10 @@ private struct FullscreenPlayerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    toggleReplayControls()
+                }
 
             Text(model.networkSpeedText)
                 .font(.caption.monospacedDigit().weight(.semibold))
@@ -620,11 +719,12 @@ private struct FullscreenPlayerView: View {
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            if model.isReplay {
+            if model.isReplay, replayControlsVisible {
                 VStack {
                     Spacer()
                     ReplayControls(model: model, presentation: .fullscreen)
                         .frame(maxWidth: .infinity)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(2)
@@ -651,6 +751,46 @@ private struct FullscreenPlayerView: View {
         .onAppear {
             DispatchQueue.main.async {
                 ScreenOrientation.lockLandscape()
+            }
+            if model.isReplay {
+                scheduleReplayControlsAutoHide()
+            }
+        }
+        .onChange(of: model.isReplay) { replay in
+            replayControlsVisible = true
+            if replay {
+                scheduleReplayControlsAutoHide()
+            } else {
+                hideReplayControlsTask?.cancel()
+                hideReplayControlsTask = nil
+            }
+        }
+        .onDisappear {
+            hideReplayControlsTask?.cancel()
+            hideReplayControlsTask = nil
+        }
+    }
+
+    private func toggleReplayControls() {
+        hideReplayControlsTask?.cancel()
+        hideReplayControlsTask = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            replayControlsVisible.toggle()
+        }
+        if replayControlsVisible {
+            scheduleReplayControlsAutoHide()
+        }
+    }
+
+    private func scheduleReplayControlsAutoHide() {
+        guard model.isReplay else { return }
+        hideReplayControlsTask?.cancel()
+        hideReplayControlsTask = nil
+        hideReplayControlsTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard let self = self, !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                self.replayControlsVisible = false
             }
         }
     }
@@ -721,8 +861,6 @@ private struct ReplayControls: View {
     let presentation: ReplayControlsPresentation
     @State private var sliderValue = 0.0
     @State private var isEditing = false
-
-    private let rates: [Float] = [0.5, 1.0, 2.0, 3.0, 5.0]
 
     init(
         model: PlayerViewModel,
@@ -798,28 +936,6 @@ private struct ReplayControls: View {
                 }
             )
             .disabled(model.isLoading || model.replayDurationSecond <= 0)
-
-            HStack {
-                Label("内存卡回放", systemImage: "play.rectangle")
-                    .font(.subheadline)
-                Spacer()
-                Menu {
-                    ForEach(rates, id: \.self) { rate in
-                        Button {
-                            model.setReplayRate(rate)
-                        } label: {
-                            if abs(model.replayRate - rate) < 0.01 {
-                                Label(rateLabel(rate), systemImage: "checkmark")
-                            } else {
-                                Text(rateLabel(rate))
-                            }
-                        }
-                    }
-                } label: {
-                    Label(rateLabel(model.replayRate), systemImage: "speedometer")
-                }
-                .disabled(model.isLoading)
-            }
         }
     }
 
@@ -836,13 +952,6 @@ private struct ReplayControls: View {
             return String(format: "%02lld:%02lld:%02lld", hours, minutes, remainingSeconds)
         }
         return String(format: "%02lld:%02lld", minutes, remainingSeconds)
-    }
-
-    private func rateLabel(_ rate: Float) -> String {
-        if abs(rate.rounded() - rate) < 0.01 {
-            return String(format: "%.0fx", rate)
-        }
-        return String(format: "%.1fx", rate)
     }
 }
 
