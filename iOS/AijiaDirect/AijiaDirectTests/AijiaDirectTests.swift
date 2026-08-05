@@ -192,6 +192,90 @@ final class AijiaDirectTests: XCTestCase {
         XCTAssertEqual(credentialStore.saveCallCount, 0)
     }
 
+
+    @MainActor
+    func testLoginWithoutRememberingDoesNotUseOrSavePreviousCamera() async {
+        let credentialStore = StubCredentialStore()
+        credentialStore.loadedLogin = SavedAijiaLogin(
+            phone: "13800138000",
+            password: "password",
+            cameraSelector: "saved-camera"
+        )
+        let camera = AijiaCamera(
+            id: "camera-id",
+            name: "Front Door",
+            macID: "camera-mac",
+            baseURL: URL(string: "https://example.test")!,
+            jwtoken: "token"
+        )
+        let apiClient = StubAijiaAPIClient(
+            openStreamResult: .success(
+                AijiaStream(
+                    camera: camera,
+                    url: URL(string: "https://example.test/live.flv")!
+                )
+            )
+        )
+        var requestedSelector: String?
+        let model = PlayerViewModel(
+            credentialStore: credentialStore,
+            makeAPIClient: { _, _, selector in
+                requestedSelector = selector
+                return apiClient
+            }
+        )
+        model.rememberLogin = false
+
+        model.start()
+        await waitUntil { model.shouldPresentCameraSelection || model.hasError }
+
+        XCTAssertEqual(requestedSelector, "")
+        XCTAssertEqual(apiClient.openStreamCallCount, 0)
+        XCTAssertTrue(model.shouldPresentCameraSelection)
+        XCTAssertEqual(credentialStore.saveCallCount, 0)
+        XCTAssertEqual(credentialStore.clearCallCount, 1)
+    }
+
+    @MainActor
+    func testSelectingCameraWithoutRememberingDoesNotSaveCredentials() async {
+        let credentialStore = StubCredentialStore()
+        let camera = AijiaCamera(
+            id: "camera-id",
+            name: "Front Door",
+            macID: "camera-mac",
+            baseURL: URL(string: "https://example.test")!,
+            jwtoken: "token"
+        )
+        let apiClient = StubAijiaAPIClient(
+            openStreamResult: .success(
+                AijiaStream(
+                    camera: camera,
+                    url: URL(string: "https://example.test/live.flv")!
+                )
+            )
+        )
+        var requestedSelector: String?
+        let model = PlayerViewModel(
+            credentialStore: credentialStore,
+            makeAPIClient: { _, _, selector in
+                requestedSelector = selector
+                return apiClient
+            }
+        )
+        model.phone = "13800138000"
+        model.password = "password"
+        model.rememberLogin = false
+
+        model.playCamera(camera)
+        await waitUntil { model.streamURL != nil || model.hasError }
+
+        XCTAssertEqual(requestedSelector, "camera-mac")
+        XCTAssertEqual(apiClient.openStreamCallCount, 1)
+        XCTAssertEqual(credentialStore.saveCallCount, 0)
+        XCTAssertEqual(credentialStore.clearCallCount, 2)
+        XCTAssertNil(credentialStore.savedLogin)
+    }
+
     @MainActor
     func testPlayerSurfaceMovesBetweenHostsWithoutBeingRecreated() {
         let model = PlayerViewModel(
@@ -283,6 +367,7 @@ private final class StubCredentialStore: CredentialStoring {
     var saveResult = true
     private(set) var savedLogin: SavedAijiaLogin?
     private(set) var saveCallCount = 0
+    private(set) var clearCallCount = 0
 
     func load() -> SavedAijiaLogin? {
         loadedLogin
@@ -316,6 +401,7 @@ private final class StubCredentialStore: CredentialStoring {
     }
 
     func clear() {
+        clearCallCount += 1
         loadedLogin = nil
         savedLogin = nil
         autoConnectEnabled = false

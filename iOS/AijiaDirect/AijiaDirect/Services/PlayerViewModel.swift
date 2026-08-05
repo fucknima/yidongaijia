@@ -34,6 +34,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
     @Published private(set) var networkSpeedText = "-- KB/s"
+    @Published private(set) var shouldPresentCameraSelection = false
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -114,7 +115,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         start()
     }
 
-    func start() {
+    func start(allowCurrentCameraWhenNotRemembered: Bool = false) {
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         let credentialIsMissing = password.isEmpty
         guard !trimmedPhone.isEmpty, !credentialIsMissing else {
@@ -133,8 +134,17 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         resetReplayPlaybackState()
         stopPlaybackOnly()
         let loginPassword = password
-        let selectedCamera = cameraSelector
         let shouldRememberLogin = rememberLogin
+        let selectedCamera = (!shouldRememberLogin && !allowCurrentCameraWhenNotRemembered) ? "" : cameraSelector
+        if !shouldRememberLogin {
+            credentialStore.clear()
+            hasSavedLogin = false
+            logger.info(
+                "AUTH",
+                "用户未选择记住登录，开始登录前清除本地保存信息 account=\(DiagnosticsLogger.maskPhone(trimmedPhone)) useCurrentCamera=\(allowCurrentCameraWhenNotRemembered)"
+            )
+        }
+        shouldPresentCameraSelection = false
         let client = makeAPIClient(trimmedPhone, loginPassword, selectedCamera)
         api = client
         shouldPlay = true
@@ -177,6 +187,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                         } else {
                             logger.error("AUTH", "登录信息保存失败")
                         }
+                    } else if !availableCameras.isEmpty {
+                        shouldPresentCameraSelection = true
+                        logger.info("UI", "登录完成且未记住登录，准备自动打开摄像头选择页 count=\(availableCameras.count)")
                     }
                     return
                 }
@@ -238,12 +251,21 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         cameraSelector = camera.macID
         selectedCameraID = camera.macID
         guard rememberLogin, !phone.isEmpty, !password.isEmpty else {
-            start()
+            credentialStore.clear()
+            hasSavedLogin = false
+            logger.info("AUTH", "用户未选择记住登录，选择摄像头前确认清除本地保存信息")
+            start(allowCurrentCameraWhenNotRemembered: true)
             return
         }
         _ = credentialStore.save(phone: phone.trimmingCharacters(in: .whitespacesAndNewlines), password: password, cameraSelector: camera.macID)
         credentialStore.setAutoConnectEnabled(true)
         start()
+    }
+
+    func consumeCameraSelectionPrompt() {
+        guard shouldPresentCameraSelection else { return }
+        shouldPresentCameraSelection = false
+        logger.info("UI", "消费自动打开摄像头选择页请求")
     }
 
     private func cameraToPlay(from availableCameras: [AijiaCamera], selector: String) -> AijiaCamera? {

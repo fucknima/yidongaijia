@@ -143,10 +143,10 @@ private struct CameraSelectionPage: View {
         List {
             Section {
                 if model.cameras.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "video.slash")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
+                    VStack(spacing: 10) {
+                        AijiaCameraSelectionIcon()
+                            .frame(width: 58, height: 58)
+                            .foregroundStyle(.blue)
                         Text("暂无摄像头")
                             .font(.headline)
                         Text("请先登录并读取账号下的摄像头。")
@@ -201,6 +201,30 @@ private struct CameraSelectionPage: View {
         .onAppear {
             DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择页 count=\(model.cameras.count)")
         }
+    }
+}
+
+private struct AijiaCameraSelectionIcon: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(lineWidth: 3)
+                .frame(width: 44, height: 34)
+            Circle()
+                .stroke(lineWidth: 3)
+                .frame(width: 17, height: 17)
+            Circle()
+                .fill()
+                .frame(width: 5, height: 5)
+            Path { path in
+                path.move(to: CGPoint(x: 43, y: 24))
+                path.addLine(to: CGPoint(x: 56, y: 16))
+                path.addLine(to: CGPoint(x: 56, y: 42))
+                path.addLine(to: CGPoint(x: 43, y: 34))
+            }
+            .stroke(lineWidth: 3)
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -267,9 +291,15 @@ private struct PlayerScreen: View {
                         .buttonStyle(.bordered)
                     } else {
                         VStack(spacing: 12) {
-                            Image(systemName: model.hasError ? "wifi.exclamationmark" : "video")
-                                .font(.system(size: 42))
-                                .foregroundStyle(model.hasError ? .red : .secondary)
+                            if model.hasError {
+                                Image(systemName: "wifi.exclamationmark")
+                                    .font(.system(size: 42))
+                                    .foregroundStyle(.red)
+                            } else {
+                                AijiaCameraSelectionIcon()
+                                    .frame(width: 58, height: 58)
+                                    .foregroundStyle(.secondary)
+                            }
                             Text(model.isLoading ? "正在获取视频地址" : "暂时没有播放画面")
                                 .foregroundStyle(.secondary)
 
@@ -357,11 +387,24 @@ private struct PlayerScreen: View {
                 CameraSelectionPage(model: model)
             }
         }
+        .onAppear {
+            presentCameraSelectionIfNeeded(reason: "播放页显示时检查自动摄像头选择")
+        }
+        .onChange(of: model.shouldPresentCameraSelection) { _ in
+            presentCameraSelectionIfNeeded(reason: "收到自动摄像头选择请求")
+        }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
         }) {
             FullscreenPlayerView(model: model)
         }
+    }
+
+    private func presentCameraSelectionIfNeeded(reason: String) {
+        guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
+        DiagnosticsLogger.shared.info("UI", "\(reason)，自动打开独立摄像头选择页")
+        model.consumeCameraSelectionPrompt()
+        showingCameraSelection = true
     }
 }
 
@@ -830,6 +873,12 @@ private struct HistoryView: View {
             NavigationView {
                 DiagnosticsView(model: model)
             }
+        }
+        .onAppear {
+            presentCameraSelectionIfNeeded(reason: "播放页显示时检查自动摄像头选择")
+        }
+        .onChange(of: model.shouldPresentCameraSelection) { _ in
+            presentCameraSelectionIfNeeded(reason: "收到自动摄像头选择请求")
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
