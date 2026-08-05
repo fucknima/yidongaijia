@@ -129,10 +129,10 @@ private struct LoginView: View {
                     .accessibilityLabel("诊断日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: UpdateLogView()) {
-                        Image(systemName: "list.bullet.rectangle")
+                    NavigationLink(destination: AboutView()) {
+                        Image(systemName: "info.circle")
                     }
-                    .accessibilityLabel("更新日志")
+                    .accessibilityLabel("关于")
                 }
                 ToolbarItem(placement: .keyboard) {
                     Button("完成") {
@@ -285,12 +285,6 @@ private struct PlayerScreen: View {
                     .accessibilityLabel("诊断日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: UpdateLogView()) {
-                        Image(systemName: "list.bullet.rectangle")
-                    }
-                    .accessibilityLabel("更新日志")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Text("版本 \(AppVersionInfo.display)")
                         if !model.cameras.isEmpty {
@@ -353,7 +347,7 @@ private struct PlayerSurface: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.black.opacity(0.35), in: Capsule())
+                .background(.clear)
                 .padding(10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
@@ -363,7 +357,7 @@ private struct PlayerSurface: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
-            .frame(width: 52, height: 52)
+            .frame(width: 68, height: 68)
             .contentShape(Rectangle())
             .accessibilityLabel("横屏全屏")
             .padding(4)
@@ -391,7 +385,7 @@ private struct FullscreenPlayerView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.black.opacity(0.35), in: Capsule())
+                .background(.clear)
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
@@ -413,7 +407,7 @@ private struct FullscreenPlayerView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
-            .frame(width: 58, height: 58)
+            .frame(width: 72, height: 72)
             .contentShape(Rectangle())
             .accessibilityLabel("退出全屏")
             .padding(4)
@@ -474,15 +468,6 @@ private struct StatusText: View {
     }
 }
 
-private struct ReleaseNote: Identifiable {
-    let version: String
-    let date: String
-    let title: String
-    let details: [String]
-
-    var id: String { "\(version)-\(date)-\(title)" }
-}
-
 private enum AppVersionInfo {
     static var display: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
@@ -490,206 +475,6 @@ private enum AppVersionInfo {
 
     static var build: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
-    }
-}
-
-private enum ReleaseNotesCatalog {
-    static let all: [ReleaseNote] = [
-        ReleaseNote(
-            version: "回放诊断修复",
-            date: "2026-08-02",
-            title: "回放诊断隔离与查询去重",
-            details: [
-                "诊断日志改为独立弹窗，不再通过回放导航栈推入页面。",
-                "打开、刷新和关闭诊断页不会停止或重建当前回放播放器。",
-                "回放期间忽略页面生命周期触发的自动历史录像查询，避免重复请求和日志刷屏。",
-                "保留手动查询历史录像功能，并延长重复查询保护时间。"
-            ]
-        ),
-        ReleaseNote(
-            version: "1.1",
-            date: "2026-08-02",
-            title: "回放与诊断导航修复",
-            details: [
-                "修复内存卡回放时打开诊断页会误停止回放并返回播放页。",
-                "只有明确返回播放页或点击停止回放，才会结束回放会话。",
-                "修复回放页面导航过程中的播放器释放问题。",
-                "修复退出登录后重启 App 仍自动进入播放页的问题。",
-                "构建版本改为每次 GitHub Actions 构建自动递增 0.1。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 speedfix",
-            date: "2026-08-02",
-            title: "回放倍速与播放器状态修复",
-            details: [
-                "修复倍速设置被播放器回调覆盖的问题。",
-                "回放切换、拖动进度和播放器重建时重新应用倍速。",
-                "降低播放器视图更新对回放进度的干扰。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 replaydiagfix",
-            date: "2026-08-02",
-            title: "回放进度与诊断稳定性修复",
-            details: [
-                "限制历史录像查询重复请求，避免诊断页面出现大量日志。",
-                "忽略过期播放器和旧回放任务的进度回调。",
-                "修复拖动进度后播放器黑屏、回放状态不同步和会话过期重试问题。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v23–v24",
-            date: "2026-08-02",
-            title: "历史回放交互修复",
-            details: [
-                "按录像片段起点请求历史地址，避免点击当天回放从错误时间开始。",
-                "增加服务器回放定位和拖动进度的恢复逻辑。",
-                "修复回放结束切回直播后页面状态合并、黑屏和无画面提示问题。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v21–v22",
-            date: "2026-08-02",
-            title: "日志、文件访问与前后台修复",
-            details: [
-                "支持导出诊断日志，并允许从 iPhone 文件 App 访问。",
-                "修复回放切换后台再回来后只剩声音或视图丢失。",
-                "增加回放播放器在前后台切换时的恢复和旧地址清理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v19–v20",
-            date: "2026-08-02",
-            title: "进度条与倍速播放",
-            details: [
-                "增加内存卡回放进度条和时间显示。",
-                "增加 0.5x、1x、2x、3x、5x 倍速播放。",
-                "拖动进度时使用云端回放定位，避免本地播放器时间与服务器录像不同步。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v16–v18",
-            date: "2026-08-02",
-            title: "构建工程与资源整理",
-            details: [
-                "整理 Xcode 工程、资源目录和 MobileVLCKit 构建所需文件。",
-                "修复源码压缩包目录层级，确保 GitHub Actions 能正确解包构建。",
-                "补齐深色/浅色 App 图标资源。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v10–v14",
-            date: "2026-08-02",
-            title: "登录、播放和页面结构完善",
-            details: [
-                "登录失败时返回登录界面，并保存账号密码输入内容。",
-                "将登录、播放、内存卡回放和诊断日志分成独立页面。",
-                "增加摄像头选择、登录状态恢复和播放器错误状态提示。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v8–v9",
-            date: "2026-08-02",
-            title: "界面与设备资源优化",
-            details: [
-                "更换爱家直连 App 图标，并加入浅色/深色图标适配。",
-                "优化播放页布局、摄像头状态显示和控制按钮。",
-                "增加本机解码播放器视图的挂载与释放处理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v7",
-            date: "2026-08-02",
-            title: "前后台播放恢复",
-            details: [
-                "应用进入后台时暂停或释放不再可靠的播放状态。",
-                "回到前台时重新获取实时地址，避免从几分钟前的缓存位置继续播放。",
-                "增加播放保活和实时流恢复状态提示。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v6",
-            date: "2026-08-02",
-            title: "云台与内存卡回放",
-            details: [
-                "增加上下左右云台控制。",
-                "按日期获取内存卡录像列表并打开历史录像。",
-                "增加历史录像结束后恢复实时流的处理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v5",
-            date: "2026-08-02",
-            title: "诊断日志",
-            details: [
-                "增加实时日志页面和日志导出。",
-                "记录登录、HTTP 请求、播放器状态、保活和错误信息。",
-                "对手机号、密码、令牌和签名地址进行脱敏。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v3–v4",
-            date: "2026-08-02",
-            title: "直连播放基础版",
-            details: [
-                "手机直接登录移动爱家云端，不经过中转服务器。",
-                "获取实时地址并在 iPhone 本机用 MobileVLCKit 解码播放。",
-                "支持账号下摄像头列表和可选摄像头名称/mac_id。"
-            ]
-        ),
-        ReleaseNote(
-            version: "1.0",
-            date: "2026-08-02",
-            title: "首个可用版本",
-            details: [
-                "整合登录、实时播放、云台、内存卡回放和诊断日志功能。",
-                "密码保存到 iOS 钥匙串，诊断日志支持文件访问。"
-            ]
-        )
-    ]
-}
-
-private struct UpdateLogView: View {
-    var body: some View {
-        List {
-            Section {
-                HStack {
-                    Label("当前版本", systemImage: "app.badge")
-                    Spacer()
-                    Text("\(AppVersionInfo.display) (\(AppVersionInfo.build))")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline.monospacedDigit())
-                }
-            }
-
-            Section("修复记录") {
-                ForEach(ReleaseNotesCatalog.all) { note in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(note.version.hasPrefix("历史") ? note.version : "版本 \(note.version)")
-                                .font(.headline)
-                            Spacer()
-                            Text(note.date)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(note.title)
-                            .font(.subheadline.weight(.semibold))
-
-                        ForEach(note.details, id: \.self) { detail in
-                            Label(detail, systemImage: "checkmark.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .navigationTitle("更新日志")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -998,9 +783,13 @@ private struct HistoryView: View {
             }
         }
         .onAppear {
+            model.setHistoryVisible(true)
             guard !hasLoadedOnce, model.isAuthenticated else { return }
             hasLoadedOnce = true
             model.loadRecordings(for: selectedDate)
+        }
+        .onDisappear {
+            model.setHistoryVisible(false)
         }
         .sheet(isPresented: $showingDiagnostics) {
             NavigationView {

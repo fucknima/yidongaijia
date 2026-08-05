@@ -11,7 +11,7 @@ import Security
 import Darwin
 #endif
 
-struct AijiaCamera: Identifiable {
+struct AijiaCamera: Identifiable, Codable {
     let id: String
     let name: String
     let macID: String

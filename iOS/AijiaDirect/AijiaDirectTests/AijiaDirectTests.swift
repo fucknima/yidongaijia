@@ -296,6 +296,12 @@ private final class StubCredentialStore: CredentialStoring {
         autoConnectEnabled = enabled
     }
 
+    func loadCachedCameras() -> [AijiaCamera] {
+        []
+    }
+
+    func saveCachedCameras(_ cameras: [AijiaCamera]) {}
+
     func save(phone: String, password: String, cameraSelector: String) -> Bool {
         saveCallCount += 1
         guard saveResult else { return false }

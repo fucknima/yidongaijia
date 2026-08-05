@@ -65,6 +65,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var didEnterBackgroundWhilePlaying = false
     private var didUserLogout = false
     private var didAutoConnect = false
+    private var isHistoryVisible = false
     private var lastLoggedPlayerState = ""
     private var lastLoggedPlaybackSecond = -10
     private let logger = DiagnosticsLogger.shared
@@ -86,13 +87,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             password = savedLogin.password
             cameraSelector = savedLogin.cameraSelector
             selectedCameraID = savedLogin.cameraSelector
+            cameras = credentialStore.loadCachedCameras()
             hasSavedLogin = true
             shouldShowLogin = !autoConnectEnabled
             didUserLogout = !autoConnectEnabled
             status = autoConnectEnabled ? "已恢复保存的登录信息" : "登录信息已保存，请手动登录"
             logger.info(
                 "AUTH",
-                "已从钥匙串恢复登录信息 account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled)"
+                "已从钥匙串恢复登录信息 account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled) cachedCameraCount=\(cameras.count)"
             )
         } else {
             logger.info("AUTH", "未找到保存的登录信息")
@@ -146,6 +148,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                       self.shouldPlay,
                       self.api === client else { return }
                 cameras = availableCameras
+                credentialStore.saveCachedCameras(availableCameras)
+                logger.info("PLAYER", "摄像头列表已缓存 count=\(availableCameras.count)")
                 isAuthenticated = true
                 shouldShowLogin = false
 
@@ -154,6 +158,20 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     isPlaying = false
                     hasError = false
                     status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像头"
+                    logger.info("PLAYER", "登录成功，已读取摄像头列表但暂未选择设备 count=\(availableCameras.count)")
+                    if shouldRememberLogin {
+                        if credentialStore.save(
+                            phone: trimmedPhone,
+                            password: loginPassword,
+                            cameraSelector: ""
+                        ) {
+                            hasSavedLogin = true
+                            credentialStore.setAutoConnectEnabled(false)
+                            logger.info("AUTH", "登录信息已保存，等待用户选择摄像头 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+                        } else {
+                            logger.error("AUTH", "登录信息保存失败")
+                        }
+                    }
                     return
                 }
 
@@ -210,6 +228,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     func playCamera(_ camera: AijiaCamera) {
+        logger.info("PLAYER", "用户选择摄像头并准备播放 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
         cameraSelector = camera.macID
         selectedCameraID = camera.macID
         guard rememberLogin, !phone.isEmpty, !password.isEmpty else {
@@ -224,7 +243,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func cameraToPlay(from availableCameras: [AijiaCamera], selector: String) -> AijiaCamera? {
         guard !availableCameras.isEmpty else { return nil }
         let normalizedSelector = AijiaSigning.normalized(selector)
-        guard !normalizedSelector.isEmpty else { return nil }
+        guard !normalizedSelector.isEmpty else {
+            logger.info("PLAYER", "未指定摄像头，等待用户从列表选择")
+            return nil
+        }
         return availableCameras.first { camera in
             [camera.macID, camera.name, camera.id]
                 .map(AijiaSigning.normalized)
@@ -291,6 +313,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         hasError = false
     }
 
+    func setHistoryVisible(_ visible: Bool) {
+        guard isHistoryVisible != visible else { return }
+        isHistoryVisible = visible
+        logger.info("UI", visible ? "进入回放页" : "离开回放页")
+    }
+
     func handleAppEnteredBackground() {
         guard shouldPlay, isAuthenticated else { return }
         didEnterBackgroundWhilePlaying = true
@@ -321,6 +349,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             status = "已回到前台，继续历史回放"
             shouldPlay = true
             resumeReplayAfterForeground()
+            return
+        }
+
+        if isHistoryVisible {
+            status = "已回到前台，停留在回放页不自动播放直播"
+            logger.info("PLAYER", "回放页可见且未播放回放，跳过前台直播刷新")
             return
         }
 
@@ -928,9 +962,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             Task { @MainActor [weak self] in
                 guard let self = self, let media = self.player?.media else { return }
                 let kbps = max(0, Double(media.statistics.inputBitrate) * 1_000)
-                self.networkSpeedText = kbps >= 1024
+                let speedText = kbps >= 1024
                     ? String(format: "%.1f MB/s", kbps / 1024)
                     : String(format: "%.0f KB/s", kbps)
+                if self.networkSpeedText != speedText {
+                    self.networkSpeedText = speedText
+                    self.logger.debug("PLAYER", "实时拉流网速 speed=\(speedText)")
+                }
             }
         }
     }

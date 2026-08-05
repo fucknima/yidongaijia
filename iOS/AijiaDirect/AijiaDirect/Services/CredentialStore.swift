@@ -11,6 +11,8 @@ protocol CredentialStoring: AnyObject {
     func load() -> SavedAijiaLogin?
     func isAutoConnectEnabled() -> Bool
     func setAutoConnectEnabled(_ enabled: Bool)
+    func loadCachedCameras() -> [AijiaCamera]
+    func saveCachedCameras(_ cameras: [AijiaCamera])
     func save(phone: String, password: String, cameraSelector: String) -> Bool
     func clear()
 }
@@ -92,6 +94,7 @@ final class CredentialStore: CredentialStoring {
     private let phoneKey = "savedLogin.phone"
     private let cameraSelectorKey = "savedLogin.cameraSelector"
     private let autoConnectKey = "savedLogin.autoConnectEnabled"
+    private let cachedCamerasKey = "savedLogin.cachedCameras"
 
     private init() {
         defaults = .standard
@@ -129,6 +132,25 @@ final class CredentialStore: CredentialStoring {
         defaults.set(enabled, forKey: autoConnectKey)
     }
 
+    func loadCachedCameras() -> [AijiaCamera] {
+        guard let data = defaults.data(forKey: cachedCamerasKey) else { return [] }
+        return (try? JSONDecoder().decode([AijiaCamera].self, from: data)) ?? []
+    }
+
+    func saveCachedCameras(_ cameras: [AijiaCamera]) {
+        let safeCameras = cameras.map { camera in
+            AijiaCamera(
+                id: camera.id,
+                name: camera.name,
+                macID: camera.macID,
+                baseURL: camera.baseURL,
+                jwtoken: ""
+            )
+        }
+        guard let data = try? JSONEncoder().encode(safeCameras) else { return }
+        defaults.set(data, forKey: cachedCamerasKey)
+    }
+
     @discardableResult
     func save(phone: String, password: String, cameraSelector: String) -> Bool {
         guard !phone.isEmpty, !password.isEmpty else { return false }
@@ -143,6 +165,7 @@ final class CredentialStore: CredentialStoring {
         defaults.removeObject(forKey: phoneKey)
         defaults.removeObject(forKey: cameraSelectorKey)
         defaults.removeObject(forKey: autoConnectKey)
+        defaults.removeObject(forKey: cachedCamerasKey)
 
         passwordStore.clear()
     }
