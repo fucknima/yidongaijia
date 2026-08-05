@@ -69,12 +69,14 @@
 {
     if (active != NO) {
         [[AVAudioSession sharedInstance] setActive:YES error:nil];
+        return YES;
     } else {
         @try {
             [[AVAudioSession sharedInstance] setActive:NO error:nil];
         } @catch (NSException *exception) {
             NSLog(@"failed to inactive AVAudioSession\n");
         }
+        return NO;
     }
 }
 
