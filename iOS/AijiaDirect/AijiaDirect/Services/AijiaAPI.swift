@@ -315,7 +315,7 @@ final class AijiaAPI: AijiaAPIClient {
                     throw CancellationError()
                 }
                 lastError = error
-                logger.error("API", "实时流尝试失败 attempt=\(attempt + 1) error=\(error.localizedDescription)")
+                logger.warning("API", "实时流尝试失败 attempt=\(attempt + 1) error=\(error.localizedDescription)")
                 if attempt == 0 {
                     resetSession()
                 }
@@ -891,7 +891,7 @@ final class AijiaAPI: AijiaAPIClient {
     }
 
     private func resetSession() {
-        logger.warning("API", "重置云端会话")
+        logger.debug("API", "重置云端会话")
         hjqToken = ""
         passID = ""
         videoToken = ""
