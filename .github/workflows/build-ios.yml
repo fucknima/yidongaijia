@@ -31,6 +31,15 @@ jobs:
           echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
           echo "Using version ${short_version}, build ${build_version}"
 
+      - name: Download IJKMediaFramework
+        working-directory: iOS/AijiaDirect
+        run: |
+          mkdir -p IJKMediaFramework
+          curl -sL -o IJKMediaFramework.framework.zip \
+            "https://github.com/fucknima/yidongaijia/releases/download/ijk-0.8.8-record/IJKMediaFramework.framework.zip"
+          unzip -q -o IJKMediaFramework.framework.zip -d IJKMediaFramework
+          test -d IJKMediaFramework/IJKMediaFramework.framework
+
       - name: Install CocoaPods and dependencies
         working-directory: iOS/AijiaDirect
         run: |

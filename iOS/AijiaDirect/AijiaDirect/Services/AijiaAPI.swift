@@ -107,7 +107,7 @@ struct AijiaRecording: Identifiable, Equatable {
 
     /// Maps the UI position to the actual server-side TF interval returned by
     /// getDeviceTFInfo. The official client sends this timestamp to
-    /// playTFLive; VLC itself is not used for seeking.
+    /// playTFLive; the player itself is not used for seeking.
     func playbackTimestamp(for position: Double) -> Int64 {
         guard endTime - startTime > 1 else { return startTime }
 

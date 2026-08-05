@@ -4,18 +4,18 @@ import Foundation
 #if canImport(Darwin)
 import Darwin
 #endif
-import MobileVLCKit
+import IJKMediaFramework
 import UIKit
 
 @MainActor
-final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
+final class PlayerViewModel: NSObject, ObservableObject {
     private static let replayRefreshAfterBackgroundThreshold: TimeInterval = 15
 
     @Published var phone = ""
     @Published var password = ""
     @Published var cameraSelector = ""
     @Published var rememberLogin = true
-    @Published private(set) var status = "请输入移动爱家账号"
+    @Published private(set) var status = "请输入移动爱家账�?
     @Published private(set) var cameraName = ""
     @Published private(set) var cameras: [AijiaCamera] = []
     @Published private(set) var selectedCameraID = ""
@@ -39,7 +39,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var isRecording = false
 
     private var api: AijiaAPIClient?
-    private var player: VLCMediaPlayer?
+    private var player: IJKFFMoviePlayerController?
     private var replayPlaybackStartTime: Int64?
     private var replaySeekTask: Task<Void, Never>?
     private var replaySeekGeneration = 0
@@ -51,14 +51,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var playbackTask: Task<Void, Never>?
     private var replayCleanupTask: Task<Void, Never>?
     private var playbackOperationID = 0
-    private let drawable: UIView = {
-        let view = UIView(frame: .zero)
-        view.backgroundColor = .black
-        view.isOpaque = true
-        view.clipsToBounds = true
-        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        return view
-    }()
     private weak var inlineSurfaceHost: UIView?
     private weak var fullscreenSurfaceHost: UIView?
     private weak var activeSurfaceHost: UIView?
@@ -77,6 +69,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var lastLoggedPlayerState = ""
     private var lastLoggedPlaybackSecond = -10
     private var recordingFileURL: URL?
+    private var playbackStateObserver: NSObjectProtocol?
+    private var playbackFinishObserver: NSObjectProtocol?
+    private var loadStateObserver: NSObjectProtocol?
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
@@ -100,20 +95,72 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             hasSavedLogin = true
             shouldShowLogin = !autoConnectEnabled
             didUserLogout = !autoConnectEnabled
-            status = autoConnectEnabled ? "已恢复保存的登录信息" : "登录信息已保存，请手动登录"
+            status = autoConnectEnabled ? "已恢复保存的登录信息" : "登录信息已保存，请手动登�?
             logger.info(
                 "AUTH",
-                "已从钥匙串恢复登录信息 account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled) cachedCameraCount=\(cameras.count)"
+                "已从钥匙串恢复登录信�?account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled) cachedCameraCount=\(cameras.count)"
             )
         } else {
             logger.info("AUTH", "未找到保存的登录信息")
         }
+        registerPlayerObservers()
+    }
+
+    deinit {
+        unregisterPlayerObservers()
+    }
+
+    private func registerPlayerObservers() {
+        let center = NotificationCenter.default
+        playbackStateObserver = center.addObserver(
+            forName: NSNotification.Name("IJKMPMoviePlayerPlaybackStateDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                self?.handlePlaybackStateChanged(notification)
+            }
+        }
+        playbackFinishObserver = center.addObserver(
+            forName: NSNotification.Name("IJKMPMoviePlayerPlaybackDidFinish"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                self?.handlePlaybackFinished(notification)
+            }
+        }
+        loadStateObserver = center.addObserver(
+            forName: NSNotification.Name("IJKMPMoviePlayerLoadStateDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                self?.handleLoadStateChanged(notification)
+            }
+        }
+    }
+
+    private func unregisterPlayerObservers() {
+        let center = NotificationCenter.default
+        if let observer = playbackStateObserver {
+            center.removeObserver(observer)
+        }
+        if let observer = playbackFinishObserver {
+            center.removeObserver(observer)
+        }
+        if let observer = loadStateObserver {
+            center.removeObserver(observer)
+        }
+        playbackStateObserver = nil
+        playbackFinishObserver = nil
+        loadStateObserver = nil
     }
 
     func autoConnectIfSaved() {
         guard hasSavedLogin, !didAutoConnect, !didUserLogout, !password.isEmpty else { return }
         didAutoConnect = true
-        logger.info("AUTH", "启动后自动连接")
+        logger.info("AUTH", "启动后自动连�?)
         start()
     }
 
@@ -121,9 +168,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         let credentialIsMissing = password.isEmpty
         guard !trimmedPhone.isEmpty, !credentialIsMissing else {
-            status = "请填写手机号和密码"
+            status = "请填写手机号和密�?
             hasError = true
-            logger.warning("AUTH", "登录被阻止，账号或密码为空")
+            logger.warning("AUTH", "登录被阻止，账号或密码为�?)
             return
         }
 
@@ -154,7 +201,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         hasError = false
         cameraName = ""
         streamURL = nil
-        status = selectedCamera.isEmpty ? "正在登录并读取摄像头…" : "正在登录并获取实时地址…"
+        status = selectedCamera.isEmpty ? "正在登录并读取摄像头�? : "正在登录并获取实时地址�?
         shouldPresentCameraSelection = false
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
@@ -175,7 +222,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     isLoading = false
                     isPlaying = false
                     hasError = false
-                    status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像头"
+                    status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像�?
                     logger.info("PLAYER", "登录成功，已读取摄像头列表但暂未选择设备 count=\(availableCameras.count)")
                     if shouldRememberLogin {
                         if credentialStore.save(
@@ -185,7 +232,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                         ) {
                             hasSavedLogin = true
                             credentialStore.setAutoConnectEnabled(false)
-                            logger.info("AUTH", "登录信息已保存，等待用户选择摄像头 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+                            logger.info("AUTH", "登录信息已保存，等待用户选择摄像�?account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
                         } else {
                             logger.error("AUTH", "登录信息保存失败")
                         }
@@ -194,7 +241,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     }
                     if !availableCameras.isEmpty {
                         shouldPresentCameraSelection = true
-                        logger.info("UI", "登录完成且未选择摄像头，准备自动打开选择页 count=\(availableCameras.count)")
+                        logger.info("UI", "登录完成且未选择摄像头，准备自动打开选择�?count=\(availableCameras.count)")
                     }
                     return
                 }
@@ -221,7 +268,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     ) {
                         hasSavedLogin = true
                         credentialStore.setAutoConnectEnabled(true)
-                        logger.info("AUTH", "登录信息已保存到钥匙串 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+                        logger.info("AUTH", "登录信息已保存到钥匙�?account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
                     } else {
                         logger.error("AUTH", "登录信息保存失败")
                     }
@@ -267,7 +314,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     func consumeCameraSelectionPrompt() {
         guard shouldPresentCameraSelection else { return }
         shouldPresentCameraSelection = false
-        logger.info("UI", "已消费自动打开摄像头选择页请求")
+        logger.info("UI", "已消费自动打开摄像头选择页请�?)
     }
 
     private func cameraToPlay(from availableCameras: [AijiaCamera], selector: String) -> AijiaCamera? {
@@ -305,7 +352,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         selectedCameraID = ""
         isLoadingRecordings = false
         shouldPresentCameraSelection = false
-        status = "已停止"
+        status = "已停�?
         hasError = false
         if !hasSavedLogin {
             shouldShowLogin = true
@@ -313,7 +360,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     func logout() {
-        logger.info("AUTH", "用户退出登录")
+        logger.info("AUTH", "用户退出登�?)
         stop()
         // Keep the existing fields and saved credentials so returning to the login
         // screen does not force the user to type the account again.
@@ -340,14 +387,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     func clearDiagnostics() {
         logger.info("DIAGNOSTICS", "用户清除诊断日志")
         logger.clear()
-        status = "诊断日志已清除"
+        status = "诊断日志已清�?
         hasError = false
     }
 
     func setHistoryVisible(_ visible: Bool) {
         guard isHistoryVisible != visible else { return }
         isHistoryVisible = visible
-        logger.info("UI", visible ? "进入回放页" : "离开回放页")
+        logger.info("UI", visible ? "进入回放�? : "离开回放�?)
     }
 
     func handleAppEnteredBackground() {
@@ -365,14 +412,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             player?.pause()
             isPlaying = false
             replayBackgroundedAt = Date()
-            status = "应用已进入后台，历史回放已暂停"
+            status = "应用已进入后台，历史回放已暂�?
         } else {
             replayBackgroundedAt = nil
             status = "应用已进入后台，回前台会刷新实时画面"
         }
         logger.info(
             "PLAYER",
-            isReplay ? "应用进入后台，暂停历史回放并保留进度" : "应用进入后台，实时播放将在回前台时刷新"
+            isReplay ? "应用进入后台，暂停历史回放并保留进度" : "应用进入后台，实时播放将在回前台时刷�?
         )
     }
 
@@ -382,7 +429,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
         guard shouldPlay, isAuthenticated else { return }
         if isReplay {
-            logger.info("REPLAY", "应用回到前台，保留历史回放进度")
+            logger.info("REPLAY", "应用回到前台，保留历史回放进�?)
             status = "已回到前台，继续历史回放"
             shouldPlay = true
             resumeReplayAfterForeground()
@@ -390,14 +437,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
 
         if isHistoryVisible {
-            status = "已回到前台，停留在回放页不自动播放直播"
+            status = "已回到前台，停留在回放页不自动播放直�?
             logger.info("PLAYER", "回放页可见且未播放回放，跳过前台直播刷新")
             return
         }
 
         guard streamURL != nil else {
-            status = "已回到前台，未启动实时画面"
-            logger.info("PLAYER", "回到前台时没有实时流，跳过自动播放")
+            status = "已回到前台，未启动实时画�?
+            logger.info("PLAYER", "回到前台时没有实时流，跳过自动播�?)
             return
         }
 
@@ -406,13 +453,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func controlPTZ(_ direction: AijiaPTZDirection) {
         guard let client = api, isAuthenticated, !isReplay else {
-            status = isReplay ? "历史回放时不能控制云台" : "请先连接摄像头"
+            status = isReplay ? "历史回放时不能控制云�? : "请先连接摄像�?
             hasError = true
             return
         }
 
         logger.info("PTZ", "用户请求云台控制 direction=\(direction.rawValue)")
-        status = "正在控制云台\(direction.title)…"
+        status = "正在控制云台\(direction.title)�?
         hasError = false
         Task(priority: .userInitiated) { [weak self, client] in
             do {
@@ -434,8 +481,16 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func captureSnapshot() {
         guard let player = player, player.isPlaying, !isReplay, !isRecording else {
-            status = isReplay ? "历史回放时不能截图" : "当前没有可截图的直播画面"
+            status = isReplay ? "历史回放时不能截�? : "当前没有可截图的直播画面"
             hasError = true
+            return
+        }
+
+        // IJK grabs the current decoded frame and converts it to a UIImage.
+        guard let image = player.thumbnailImageAtCurrentTime() else {
+            status = "截图失败，请重试"
+            hasError = true
+            logger.warning("MEDIA", "截图失败：无法获取当前帧")
             return
         }
 
@@ -444,20 +499,23 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             baseName: "Live",
             ext: "png"
         )
-        player.saveVideoSnapshot(at: destination.path, withWidth: 0, andHeight: 0)
-        status = "截图已保存到媒体库"
-        hasError = false
-        logger.info("MEDIA", "已请求截图 file=\(destination.lastPathComponent)")
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            MediaLibrary.shared.reload()
+        guard let data = image.pngData(),
+              (try? data.write(to: destination)) != nil else {
+            status = "截图保存失败"
+            hasError = true
+            logger.warning("MEDIA", "截图保存失败 file=\(destination.lastPathComponent)")
+            return
         }
+
+        status = "截图已保存到媒体�?
+        hasError = false
+        logger.info("MEDIA", "截图已保�?file=\(destination.lastPathComponent)")
+        MediaLibrary.shared.reload()
     }
 
     func toggleRecording() {
-        guard let streamURL = streamURL, !isReplay else {
-            status = isReplay ? "历史回放时不能录像" : "请先连接摄像头"
+        guard streamURL != nil, !isReplay else {
+            status = isReplay ? "历史回放时不能录�? : "请先连接摄像�?
             hasError = true
             return
         }
@@ -465,32 +523,33 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         if isRecording {
             stopRecording()
         } else {
-            startRecording(streamURL: streamURL)
+            startRecording()
         }
     }
 
-    private func startRecording(streamURL: URL) {
+    private func startRecording() {
         guard let player = player, !isRecording else { return }
         let destination = MediaLibrary.uniqueFileURL(
             in: MediaLibrary.recordingsDirectory,
             baseName: "Live",
             ext: "mp4"
         )
-        let media = VLCMedia(url: streamURL)
-        // Single-colon options are the libvlc media-option convention; the
-        // mp4 muxer finalizes the file (moov atom) when the player stops.
-        media.addOption(":sout=#standard{access=file,mux=mp4,dst=\(destination.path)}")
-        media.addOption(":sout-keep")
-        media.addOption(":network-caching=300")
+
+        // IJK tees input packets to the file inside the demuxer thread;
+        // playback continues without interruption.
+        let result = player.startRecord(withPath: destination.path)
+        guard result == 0 else {
+            status = "录像启动失败（错误码 \(result)�?
+            hasError = true
+            logger.warning("MEDIA", "录像启动失败 result=\(result)")
+            return
+        }
 
         recordingFileURL = destination
         isRecording = true
-        player.stop()
-        player.media = media
-        player.play()
-        status = "正在录制直播画面…"
+        status = "正在录制直播画面�?
         hasError = false
-        logger.info("MEDIA", "开始录像 file=\(destination.lastPathComponent)")
+        logger.info("MEDIA", "开始录�?file=\(destination.lastPathComponent)")
 
         // Verify that the file is actually being written shortly after start.
         Task { @MainActor [weak self] in
@@ -502,18 +561,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.logger.warning("MEDIA", "录像未能启动，已取消录制 file=\(destination.lastPathComponent)")
                 self.isRecording = false
                 self.recordingFileURL = nil
+                _ = self.player?.stopRecord()
                 try? FileManager.default.removeItem(at: destination)
-                if let streamURL = self.streamURL, let player = self.player {
-                    player.stop()
-                    let media = VLCMedia(url: streamURL)
-                    player.media = media
-                    player.play()
-                }
                 self.status = "录像启动失败，请重试"
                 self.hasError = true
                 return
             }
-            self.logger.debug("MEDIA", "录像文件已确认写入 file=\(destination.lastPathComponent)")
+            self.logger.debug("MEDIA", "录像文件已确认写�?file=\(destination.lastPathComponent)")
         }
     }
 
@@ -523,24 +577,19 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         recordingFileURL = nil
         isRecording = false
 
-        if let streamURL = streamURL, let player = player {
-            player.stop()
-            let media = VLCMedia(url: streamURL)
-            player.media = media
-            player.play()
-        }
+        let result = player?.stopRecord() ?? 0
 
         MediaLibrary.shared.reload()
-        if let fileURL = fileURL, Self.fileExistsAndHasData(fileURL) {
-            status = "录像已保存到媒体库"
-            logger.info("MEDIA", "录像已保存 file=\(fileURL.lastPathComponent)")
+        if result == 0, let fileURL = fileURL, Self.fileExistsAndHasData(fileURL) {
+            status = "录像已保存到媒体�?
+            logger.info("MEDIA", "录像已保�?file=\(fileURL.lastPathComponent)")
         } else {
             if let fileURL = fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
             }
             status = "录像保存失败，未生成有效文件"
             hasError = true
-            logger.warning("MEDIA", "录像保存失败，文件缺失或为空")
+            logger.warning("MEDIA", "录像保存失败 result=\(result)")
         }
     }
 
@@ -552,14 +601,15 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         return size.int64Value > 0
     }
 
-    /// A stream refresh or reconnect replaces the VLC media, so an in-progress
+    /// A stream refresh or reconnect tears down the player, so an in-progress
     /// recording can no longer be finalized. Discard the incomplete file.
     private func discardInterruptedRecording() {
         guard isRecording else { return }
         isRecording = false
+        _ = player?.stopRecord()
         if let fileURL = recordingFileURL {
             try? FileManager.default.removeItem(at: fileURL)
-            logger.warning("MEDIA", "录像中断，已删除未完成文件 file=\(fileURL.lastPathComponent)")
+            logger.warning("MEDIA", "录像中断，已删除未完成文�?file=\(fileURL.lastPathComponent)")
         }
         recordingFileURL = nil
         MediaLibrary.shared.reload()
@@ -567,7 +617,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func loadRecordings(for date: Date, force: Bool = false) {
         guard let client = api, isAuthenticated else {
-            status = "请先连接摄像头"
+            status = "请先连接摄像�?
             hasError = true
             return
         }
@@ -588,7 +638,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             }
 
             if isLoadingRecordings, recordingsQueryKey == queryKey {
-                logger.debug("REPLAY", "忽略重复的历史录像查询（请求仍在进行）")
+                logger.debug("REPLAY", "忽略重复的历史录像查询（请求仍在进行�?)
                 return
             }
 
@@ -610,7 +660,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isLoadingRecordings = true
         hasError = false
         recordings = []
-        status = "正在读取内存卡录像…"
+        status = "正在读取内存卡录像�?
         logger.info(
             "REPLAY",
             "用户查询历史录像 date=\(ISO8601DateFormatter().string(from: start))"
@@ -630,7 +680,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.recordingsTask = nil
                 self.isLoadingRecordings = false
                 self.hasError = false
-                self.status = items.isEmpty ? "这一天没有找到内存卡录像" : "找到 \(items.count) 段录像"
+                self.status = items.isEmpty ? "这一天没有找到内存卡录像" : "找到 \(items.count) 段录�?
             } catch {
                 guard let self = self,
                       self.api === client,
@@ -648,7 +698,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func playRecording(_ recording: AijiaRecording) {
         guard let client = api, isAuthenticated else {
-            status = "请先连接摄像头"
+            status = "请先连接摄像�?
             hasError = true
             return
         }
@@ -666,7 +716,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         shouldPlay = true
         replayRecording = recording
         let playbackStartTime = recording.playbackStartTime
-        status = "正在打开历史录像…"
+        status = "正在打开历史录像�?
         logger.info(
             "REPLAY",
             "用户打开历史录像 start=\(recording.startTime) end=\(recording.endTime)"
@@ -681,7 +731,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                     try await client.stopReplay()
                     try Task.checkCancellation()
                 } catch is CancellationError {
-                    self?.logger.debug("REPLAY", "切换历史录像前的停止请求已取消")
+                    self?.logger.debug("REPLAY", "切换历史录像前的停止请求已取�?)
                     return
                 } catch {
                     self?.logger.warning("REPLAY", "切换历史录像前停止旧回放失败 error=\(error.localizedDescription)")
@@ -710,12 +760,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "正在播放内存卡录像"
+                self.status = "正在播放内存卡录�?
                 self.logger.info("REPLAY", "历史录像打开成功 playbackStart=\(playbackStartTime)")
                 self.preparePlayerIfPossible()
                 self.scheduleKeepAlive()
             } catch is CancellationError {
-                self?.logger.debug("REPLAY", "打开历史录像请求已取消")
+                self?.logger.debug("REPLAY", "打开历史录像请求已取�?)
             } catch {
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
@@ -747,12 +797,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         resetReplayPlaybackState()
 
         guard shouldPlay, isAuthenticated, let client = client else {
-            status = "历史录像已停止"
+            status = "历史录像已停�?
             return
         }
 
         isLoading = true
-        status = "正在恢复实时画面…"
+        status = "正在恢复实时画面�?
         logger.info("PLAYER", "历史回放结束，立即恢复实时流")
 
         let task = Task(priority: .userInitiated) { [weak self, client] in
@@ -777,7 +827,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "已回到实时流，正在本机播放"
+                self.status = "已回到实时流，正在本机播�?
                 self.logger.info("PLAYER", "历史回放后实时流恢复成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
                 self.preparePlayerIfPossible()
                 self.scheduleKeepAlive()
@@ -798,7 +848,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
 
     func seekReplay(to position: Double) {
         guard isReplay, let client = api, isAuthenticated, let recording = replayRecording else {
-            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会话")
+            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会�?)
             return
         }
 
@@ -816,7 +866,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         player?.pause()
-        status = "正在跳转历史录像…"
+        status = "正在跳转历史录像�?
         logger.info(
             "REPLAY",
             "用户拖动回放进度 position=\(String(format: "%.4f", clampedPosition)) timestamp=\(timestamp)"
@@ -825,7 +875,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replaySeekTask = Task(priority: .userInitiated) { [weak self, client, operationID, seekGeneration] in
             do {
                 try await client.seekRecording(at: timestamp)
-                // Let the server-side transfer settle before rebuilding VLC.
+                // Let the server-side transfer settle before restarting the player.
                 // Reopening immediately can attach to an empty response and
                 // leave the replay view black.
                 try await Task.sleep(nanoseconds: 500_000_000)
@@ -840,10 +890,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "正在播放内存卡录像"
+                self.status = "正在播放内存卡录�?
                 self.logger.info("REPLAY", "历史录像跳转成功 timestamp=\(timestamp)")
             } catch is CancellationError {
-                self?.logger.debug("REPLAY", "历史录像跳转请求已取消")
+                self?.logger.debug("REPLAY", "历史录像跳转请求已取�?)
             } catch {
                 guard let self = self,
                       self.api === client,
@@ -871,21 +921,13 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         guard isReplay, let streamURL = streamURL else { return }
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
-        logger.debug("REPLAY", "服务器回放定位成功，复用播放器恢复播放")
-        if let player = player {
-            player.delegate = nil
-            player.stop()
-            player.drawable = drawable
-            player.media = VLCMedia(url: streamURL)
-            player.delegate = self
-            player.play()
-            scheduleReplayProgressTimer()
-        } else {
-            preparePlayerIfPossible()
-        }
+        logger.debug("REPLAY", "服务器回放定位成功，重启播放器恢复播�?)
+        tearDownPlayer()
+        preparePlayerIfPossible()
+        scheduleReplayProgressTimer()
     }
 
-    func mountPlayerSurface(in hostView: UIView, role: VLCPlayerSurfaceRole) {
+    func mountPlayerSurface(in hostView: UIView, role: IJKPlayerSurfaceRole) {
         switch role {
         case .inline:
             inlineSurfaceHost = hostView
@@ -896,23 +938,20 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     func layoutPlayerSurface(in hostView: UIView) {
-        guard activeSurfaceHost === hostView, drawable.superview === hostView else { return }
+        guard activeSurfaceHost === hostView else { return }
         let targetBounds = hostView.bounds
         guard targetBounds.width > 1, targetBounds.height > 1 else { return }
 
-        let sizeChanged = drawable.bounds.size != targetBounds.size
-        if drawable.frame != targetBounds {
+        if let playerView = player?.view, playerView.superview === hostView,
+           playerView.frame != targetBounds {
             UIView.performWithoutAnimation {
-                drawable.frame = targetBounds
-                drawable.layoutIfNeeded()
+                playerView.frame = targetBounds
+                playerView.layoutIfNeeded()
             }
-        }
-        if sizeChanged {
-            player?.drawable = drawable
         }
     }
 
-    func unmountPlayerSurface(from hostView: UIView, role: VLCPlayerSurfaceRole) {
+    func unmountPlayerSurface(from hostView: UIView, role: IJKPlayerSurfaceRole) {
         switch role {
         case .inline:
             if inlineSurfaceHost === hostView {
@@ -933,30 +972,39 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func activatePreferredPlayerSurface() {
         guard let hostView = fullscreenSurfaceHost ?? inlineSurfaceHost else {
             if activeSurfaceHost != nil {
-                drawable.removeFromSuperview()
                 activeSurfaceHost = nil
-                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运行")
+                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运�?)
             }
             return
         }
 
-        let hostChanged = activeSurfaceHost !== hostView || drawable.superview !== hostView
+        let hostChanged = activeSurfaceHost !== hostView
         activeSurfaceHost = hostView
         if hostChanged {
-            drawable.removeFromSuperview()
-            drawable.frame = hostView.bounds
-            hostView.insertSubview(drawable, at: 0)
-            logger.debug("PLAYER", "播放器输出面已挂载到新宿主")
-
-            // The drawable UIView itself never changes. Reapplying that same
-            // instance lets VLC refresh its layout without reopening media.
-            player?.drawable = drawable
+            attachPlayerView(to: hostView)
+            logger.debug("PLAYER", "播放器输出面已挂载到新宿�?)
         }
 
         layoutPlayerSurface(in: hostView)
         if player == nil {
             preparePlayerIfPossible()
         }
+    }
+
+    private func attachPlayerView(to hostView: UIView) {
+        guard let playerView = player?.view else { return }
+        if playerView.superview !== hostView {
+            playerView.removeFromSuperview()
+            playerView.frame = hostView.bounds
+            playerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            hostView.insertSubview(playerView, at: 0)
+        }
+    }
+
+    private func tearDownPlayer() {
+        _ = player?.stopRecord()
+        player?.shutdown()
+        player = nil
     }
 
     private func preparePlayerIfPossible() {
@@ -969,14 +1017,15 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             return
         }
 
-        let player = VLCMediaPlayer()
-        player.delegate = self
-        player.drawable = drawable
-        player.media = VLCMedia(url: streamURL)
+        let player = IJKFFMoviePlayerController(contentURL: streamURL)
+        player.setPlayerOptionIntValue(300, forKey: "network-caching")
+        player.shouldAutoplay = true
         self.player = player
         lastLoggedPlayerState = ""
         lastLoggedPlaybackSecond = -10
-        logger.info("PLAYER", "开始本机解码 url=\(DiagnosticsLogger.redactedURL(streamURL))")
+        logger.info("PLAYER", "开始本机解�?url=\(DiagnosticsLogger.redactedURL(streamURL))")
+        attachPlayerView(to: activeSurfaceHost!)
+        player.prepareToPlay()
         player.play()
         scheduleNetworkSpeedTimer()
         if isReplay {
@@ -995,14 +1044,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
     }
 
-    private func updateReplayProgress(from currentPlayer: VLCMediaPlayer) {
+    private func updateReplayProgress(from currentPlayer: IJKFFMoviePlayerController) {
         guard isReplay,
               !isLoading,
               currentPlayer === player,
               let recording = replayRecording,
               let playbackStartTime = replayPlaybackStartTime else { return }
 
-        let currentMilliseconds = max(0, Int64(currentPlayer.time.intValue))
+        let currentMilliseconds = max(0, Int64(currentPlayer.currentPlaybackTime * 1_000))
         let absoluteSecond = playbackStartTime + currentMilliseconds / 1_000
         let relativeSecond = max(0, min(replayDurationSecond, absoluteSecond - recording.startTime))
         if replayCurrentSecond != relativeSecond {
@@ -1021,7 +1070,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastNetworkReceivedBytes = currentNetworkReceivedBytes()
         lastNetworkSpeedSampleDate = Date()
         networkSpeedText = "测速中"
-        logger.debug("PLAYER", "已启动 1 秒实时网速采样定时器")
+        logger.debug("PLAYER", "已启�?1 秒实时网速采样定时器")
         networkSpeedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateNetworkSpeedText()
@@ -1043,7 +1092,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
               let previousDate = lastNetworkSpeedSampleDate else {
             lastNetworkReceivedBytes = receivedBytes
             lastNetworkSpeedSampleDate = now
-            logger.debug("PLAYER", "实时网速采样基线已初始化 bytes=\(receivedBytes)")
+            logger.debug("PLAYER", "实时网速采样基线已初始�?bytes=\(receivedBytes)")
             return
         }
 
@@ -1058,7 +1107,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastNetworkSpeedSampleDate = now
         if networkSpeedText != speedText {
             networkSpeedText = speedText
-            logger.debug("PLAYER", "实时拉流网速 speed=\(speedText)")
+            logger.debug("PLAYER", "实时拉流网�?speed=\(speedText)")
         }
     }
 
@@ -1089,14 +1138,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
         return totalBytes
         #else
-        logger.warning("PLAYER", "当前平台不支持实时网速采样")
+        logger.warning("PLAYER", "当前平台不支持实时网速采�?)
         return nil
         #endif
     }
 
     private func scheduleKeepAlive() {
         keepAliveTimer?.invalidate()
-        logger.debug("PLAYER", "已启动 20 秒保活定时器")
+        logger.debug("PLAYER", "已启�?20 秒保活定时器")
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.runKeepAlive()
@@ -1131,8 +1180,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func reconnect(client: AijiaAPIClient) async {
         guard !reconnectInFlight else { return }
         reconnectInFlight = true
-        logger.warning("PLAYER", "保活失败，开始重连")
-        status = "保活失败，正在重新连接…"
+        logger.warning("PLAYER", "保活失败，开始重�?)
+        status = "保活失败，正在重新连接�?
         hasError = false
 
         do {
@@ -1149,9 +1198,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             hasError = false
             logger.info("PLAYER", "重连成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
             discardInterruptedRecording()
-            player?.delegate = nil
-            player?.stop()
-            player = nil
+            tearDownPlayer()
             preparePlayerIfPossible()
         } catch {
             guard shouldPlay, api === client else {
@@ -1175,7 +1222,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isPlaying = false
         isLoading = true
         hasError = false
-        status = "正在刷新实时画面…"
+        status = "正在刷新实时画面�?
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
             defer {
@@ -1225,7 +1272,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         if let backgroundedAt = backgroundedAt,
            Date().timeIntervalSince(backgroundedAt) < Self.replayRefreshAfterBackgroundThreshold {
             if let player = player {
-                player.drawable = drawable
+                if let host = activeSurfaceHost {
+                    attachPlayerView(to: host)
+                }
                 player.play()
                 isPlaying = true
                 hasError = false
@@ -1258,7 +1307,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         let operationID = playbackOperationID
         let resumeTimestamp = currentReplayAbsoluteSecond()
         logger.info("REPLAY", "回放切后台超过阈值，重新建立回放会话 timestamp=\(resumeTimestamp)")
-        status = "正在恢复历史回放…"
+        status = "正在恢复历史回放�?
         isLoading = true
         isPlaying = false
         hasError = false
@@ -1290,11 +1339,11 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.isLoading = false
                 self.isPlaying = self.player != nil
                 self.hasError = false
-                self.status = "正在播放内存卡录像"
+                self.status = "正在播放内存卡录�?
                 self.logger.info("REPLAY", "重新建立历史回放会话成功 url=\(DiagnosticsLogger.redactedURL(url))")
                 self.scheduleKeepAlive()
             } catch is CancellationError {
-                self.logger.debug("REPLAY", "恢复历史回放请求已取消")
+                self.logger.debug("REPLAY", "恢复历史回放请求已取�?)
             } catch {
                 guard self.isCurrentPlaybackOperation(operationID),
                       self.isReplay else { return }
@@ -1335,11 +1384,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         if player != nil {
-            logger.debug("PLAYER", "释放播放器实例")
+            logger.debug("PLAYER", "释放播放器实�?)
         }
-        player?.delegate = nil
-        player?.stop()
-        player = nil
+        tearDownPlayer()
     }
 
     private func resetReplayPlaybackState() {
@@ -1393,84 +1440,52 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
     }
 
-    func mediaPlayerStateChanged(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
+    private func handlePlaybackStateChanged(_ notification: Notification) {
+        guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
+              currentPlayer === player else { return }
+
+        let state = currentPlayer.playbackState.rawValue
+        if state != lastLoggedPlayerState {
+            lastLoggedPlayerState = state
+            logger.info("PLAYER", "IJK 状态变�?state=\(state)")
         }
 
-        let state = String(describing: currentPlayer.state)
-        guard state != lastLoggedPlayerState else { return }
-        lastLoggedPlayerState = state
-        logger.info("PLAYER", "VLC 状态变化 state=\(state)")
-        if state.lowercased().contains("error") {
-            hasError = true
+        switch currentPlayer.playbackState {
+        case .playing:
+            isPlaying = true
+            hasError = false
+            if isReplay {
+                scheduleReplayProgressTimer()
+            }
+            logger.info("PLAYER", "IJK 已开始输出视�?)
+        case .paused:
+            logger.info("PLAYER", "IJK 已暂�?)
+        case .stopped:
+            if shouldPlay {
+                isPlaying = false
+            }
+            logger.info("PLAYER", "IJK 已停�?)
+        default:
+            break
+        }
+    }
+
+    private func handlePlaybackFinished(_ notification: Notification) {
+        guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
+              currentPlayer === player else { return }
+
+        let reason = (notification.userInfo?[IJKMPMoviePlayerPlaybackDidFinishReasonUserInfoKey] as? NSNumber)?.intValue
+        if reason == IJKMPMovieFinishReason.playbackError.rawValue {
             isPlaying = false
-            status = "播放器报告错误"
-            logger.error("PLAYER", "VLC 报告播放错误 state=\(state)")
+            hasError = true
+            status = "播放器报告错�?
+            logger.error("PLAYER", "IJK 播放错误")
         }
     }
 
-    func mediaPlayerTimeChanged(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
-        }
-
-        if isReplay {
-            updateReplayProgress(from: currentPlayer)
-        }
-
-        let second = Int(currentPlayer.time.intValue) / 1_000
-        guard second >= 0, second - lastLoggedPlaybackSecond >= 10 else { return }
-        lastLoggedPlaybackSecond = second
-        logger.debug("PLAYER", "VLC 播放进度 timeSec=\(second)")
-    }
-
-    func mediaPlayerPlaying(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
-        }
-        isPlaying = true
-        hasError = false
-        if isReplay {
-            scheduleReplayProgressTimer()
-        }
-        logger.info("PLAYER", "VLC 已开始输出视频")
-    }
-
-    func mediaPlayerPaused(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
-        }
-        logger.info("PLAYER", "VLC 已暂停")
-    }
-
-    func mediaPlayerStopped(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
-        }
-        isPlaying = false
-        logger.info("PLAYER", "VLC 已停止")
-    }
-
-    func mediaPlayerEncounteredError(_ aNotification: Notification!) {
-        guard let currentPlayer = aNotification?.object as? VLCMediaPlayer,
-              let activePlayer = player,
-              currentPlayer === activePlayer else {
-            return
-        }
-        isPlaying = false
-        hasError = true
-        status = "播放器报告错误"
-        logger.error("PLAYER", "VLC encountered error")
+    private func handleLoadStateChanged(_ notification: Notification) {
+        guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
+              currentPlayer === player else { return }
+        logger.debug("PLAYER", "IJK 加载状态变�?loadState=\(currentPlayer.loadState.rawValue)")
     }
 }
