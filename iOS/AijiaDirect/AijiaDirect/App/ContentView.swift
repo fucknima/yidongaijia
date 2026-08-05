@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -129,22 +130,50 @@ private enum AppTheme {
     }
 }
 
+private enum AppIconImage {
+    /// Reads the actual desktop app icon from the built asset catalog.
+    static var current: UIImage? {
+        var best: UIImage?
+        var bestArea: CGFloat = 0
+
+        if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String] {
+            for name in files {
+                if let image = UIImage(named: name) {
+                    let area = image.size.width * image.size.height
+                    if area > bestArea {
+                        best = image
+                        bestArea = area
+                    }
+                }
+            }
+        }
+        return best ?? UIImage(named: "AppIcon")
+    }
+}
+
 private struct AppMark: View {
     var body: some View {
-        Image(systemName: "camera.viewfinder")
-            .font(.system(size: 26, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 60, height: 60)
-            .background(
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            )
+        Group {
+            if let icon = AppIconImage.current {
+                Image(uiImage: icon)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 60, height: 60)
+                    .background(AppTheme.accent)
+            }
+        }
+        .frame(width: 60, height: 60)
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
+        )
     }
 }
 
@@ -291,6 +320,7 @@ private struct LoginView: View {
 
 private struct CameraSelectionPage: View {
     @ObservedObject var model: PlayerViewModel
+    @ObservedObject private var theme = ThemeStore.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -347,6 +377,7 @@ private struct CameraSelectionPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .tint(theme.accent.color)
         .navigationTitle("选择摄像头")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -396,29 +427,37 @@ private struct AboutView: View {
             }
 
             Section("主题色") {
-                HStack(spacing: 16) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
+                    spacing: 12
+                ) {
                     ForEach(AppAccent.allCases) { accent in
                         Button {
                             theme.accent = accent
                         } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(accent.color)
-                                    .frame(width: 30, height: 30)
-                                if theme.accent == accent {
-                                    Image(systemName: "checkmark")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(.white)
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    Circle()
+                                        .fill(accent.color)
+                                        .frame(width: 30, height: 30)
+                                    if theme.accent == accent {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.white)
+                                    }
                                 }
+                                Text(accent.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
-                            .frame(width: 40, height: 40)
+                            .frame(maxWidth: .infinity)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("主题色\(accent.title)")
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
             }
 
             Section("项目介绍") {
@@ -471,6 +510,7 @@ private struct PlayerScreen: View {
     @State private var showingFullscreen = false
     @State private var showingAbout = false
     @State private var showingCameraSelection = false
+    @State private var showingMediaLibrary = false
 
     var body: some View {
         NavigationView {
@@ -493,6 +533,30 @@ private struct PlayerScreen: View {
                     if model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
+                        }
+
+                        HStack(spacing: 12) {
+                            MediaActionButton(
+                                icon: "camera.fill",
+                                title: "截图",
+                                tint: AppTheme.accent
+                            ) {
+                                model.captureSnapshot()
+                            }
+                            MediaActionButton(
+                                icon: model.isRecording ? "stop.fill" : "record.circle",
+                                title: model.isRecording ? "停止录像" : "录像",
+                                tint: model.isRecording ? .red : AppTheme.accent
+                            ) {
+                                model.toggleRecording()
+                            }
+                            MediaActionButton(
+                                icon: "photo.on.rectangle.angled",
+                                title: "媒体库",
+                                tint: AppTheme.accent
+                            ) {
+                                showingMediaLibrary = true
+                            }
                         }
 
                         Button(role: .destructive) {
@@ -611,11 +675,44 @@ private struct PlayerScreen: View {
                 CameraSelectionPage(model: model)
             }
         }
+        .sheet(isPresented: $showingMediaLibrary) {
+            NavigationView {
+                MediaLibraryView()
+            }
+        }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
         }) {
             FullscreenPlayerView(model: model)
         }
+    }
+}
+
+private struct MediaActionButton: View {
+    let icon: String
+    let title: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }
 
@@ -1182,6 +1279,7 @@ private struct DiagnosticsView: View {
     let model: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var logger = DiagnosticsLogger.shared
+    @ObservedObject private var theme = ThemeStore.shared
     @State private var diagnosticsURL: URL?
     @State private var showingShareSheet = false
 
@@ -1244,6 +1342,7 @@ private struct DiagnosticsView: View {
         }
         .navigationTitle("诊断日志")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(theme.accent.color)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("完成") {
@@ -1329,6 +1428,203 @@ private struct DiagnosticsView: View {
             } else {
                 proxy.scrollTo("log-bottom", anchor: .bottom)
             }
+        }
+    }
+}
+
+private struct MediaLibraryView: View {
+    @ObservedObject private var library = MediaLibrary.shared
+    @ObservedObject private var theme = ThemeStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var previewItem: MediaItem?
+    @State private var sharingItem: MediaItem?
+    @State private var showingShareSheet = false
+
+    var body: some View {
+        Group {
+            if library.items.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.secondary)
+                    Text("暂无截图或录像")
+                        .font(.headline)
+                    Text("在直播画面点击截图或录像，内容会保存在这里。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            } else {
+                List {
+                    ForEach(library.items) { item in
+                        Button {
+                            previewItem = item
+                        } label: {
+                            MediaLibraryRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                library.delete(item)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                            Button {
+                                sharingItem = item
+                                showingShareSheet = true
+                            } label: {
+                                Label("分享", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(AppTheme.accent)
+                        }
+                        .contextMenu {
+                            Button {
+                                sharingItem = item
+                                showingShareSheet = true
+                            } label: {
+                                Label("分享", systemImage: "square.and.arrow.up")
+                            }
+                            Button(role: .destructive) {
+                                library.delete(item)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
+        .tint(theme.accent.color)
+        .navigationTitle("媒体库")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("完成") {
+                    dismiss()
+                }
+            }
+        }
+        .sheet(item: $previewItem) { item in
+            NavigationView {
+                MediaPreviewView(item: item)
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            if let url = sharingItem?.url {
+                ActivityView(activityItems: [url])
+            }
+        }
+        .onAppear {
+            library.reload()
+        }
+    }
+}
+
+private struct MediaLibraryRow: View {
+    let item: MediaItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            thumbnail
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.fileName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(rowDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        switch item.kind {
+        case .image:
+            if let image = UIImage(contentsOfFile: item.url.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                placeholder
+            }
+        case .video:
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                Image(systemName: "play.fill")
+                    .font(.title3)
+                    .foregroundStyle(AppTheme.accent)
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(.secondarySystemBackground))
+            .overlay(
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            )
+    }
+
+    private var rowDetail: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let dateText = formatter.string(from: item.date)
+        let sizeText = item.fileSizeText
+        return sizeText.isEmpty ? dateText : "\(dateText) · \(sizeText)"
+    }
+}
+
+private struct MediaPreviewView: View {
+    let item: MediaItem
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        Group {
+            switch item.kind {
+            case .image:
+                if let image = UIImage(contentsOfFile: item.url.path) {
+                    ScrollView {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding()
+                    }
+                } else {
+                    Text("无法读取图片")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            case .video:
+                VideoPlayer(player: player)
+                    .ignoresSafeArea()
+            }
+        }
+        .background(Color.black)
+        .navigationTitle(item.fileName)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if item.kind == .video, player == nil {
+                player = AVPlayer(url: item.url)
+                player?.play()
+            }
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
         }
     }
 }
