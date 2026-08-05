@@ -1,0 +1,54 @@
+name: Build IJKMediaFramework
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "third_party/**"
+      - ".github/workflows/build-ijk.yml"
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init ijkplayer sources
+        working-directory: third_party
+        run: ./init-ios.sh all
+
+      - name: Compile ffmpeg (arm64)
+        working-directory: third_party/ios
+        run: ./compile-ffmpeg.sh arm64
+
+      - name: Build IJKMediaFramework
+        working-directory: third_party/ios/IJKMediaPlayer
+        run: |
+          xcodebuild \
+            -project IJKMediaPlayer.xcodeproj \
+            -scheme IJKMediaFramework \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            build
+
+      - name: Package framework
+        run: |
+          FRAMEWORK_DIR="third_party/ios/IJKMediaPlayer/build/Build/Products/Release-iphoneos"
+          if [ ! -d "$FRAMEWORK_DIR/IJKMediaFramework.framework" ]; then
+            echo "framework not found in $FRAMEWORK_DIR"
+            find third_party/ios/IJKMediaPlayer/build -name "IJKMediaFramework.framework" -maxdepth 6
+            exit 1
+          fi
+          cd "$FRAMEWORK_DIR"
+          zip -qry IJKMediaFramework.framework.zip IJKMediaFramework.framework
+          ls -lh IJKMediaFramework.framework.zip
+
+      - name: Upload framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: IJKMediaFramework
+          path: third_party/ios/IJKMediaPlayer/build/Build/Products/Release-iphoneos/IJKMediaFramework.framework.zip
+          retention-days: 14
