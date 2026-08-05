@@ -59,7 +59,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
     private var networkSpeedTimer: Timer?
-    private var lastInputBitrate: Float = 0
     private var shouldPlay = false
     private var reconnectInFlight = false
     private var foregroundRefreshInFlight = false
@@ -903,10 +902,22 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         networkSpeedTimer?.invalidate()
         networkSpeedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self = self, let player = self.player else { return }
-            let bitrate = max(0, player.media?.statistics.inputBitrate ?? 0)
-            let kbps = Double(bitrate) * 8.0
-            self.networkSpeedText = kbps >= 1024 ? String(format: "%.1f MB/s", kbps / 1024.0) : String(format: "%.0f KB/s", kbps)
+            self.networkSpeedText = self.formattedInputSpeed(for: player)
         }
+    }
+
+    private func formattedInputSpeed(for player: VLCMediaPlayer) -> String {
+        guard let media = player.media as? NSObject,
+              let statistics = media.value(forKey: "statistics") as? NSObject else {
+            return "0 KB/s"
+        }
+
+        let inputBitrate = (statistics.value(forKey: "inputBitrate") as? NSNumber)?.doubleValue ?? 0
+        let kilobytesPerSecond = max(0, inputBitrate) * 8.0
+        if kilobytesPerSecond >= 1024 {
+            return String(format: "%.1f MB/s", kilobytesPerSecond / 1024.0)
+        }
+        return String(format: "%.0f KB/s", kilobytesPerSecond)
     }
 
     private func stopNetworkSpeedTimer() {

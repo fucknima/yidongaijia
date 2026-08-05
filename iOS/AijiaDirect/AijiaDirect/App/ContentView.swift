@@ -413,13 +413,28 @@ private struct AboutView: View {
                 Text("爱家直连是移动爱家的第三方 iOS 客户端，直接访问云端接口获取实时或历史回放地址，并使用 MobileVLCKit 在本机解码播放。")
             }
             Section("项目") {
-                LabeledContent("仓库地址", value: "https://github.com/yidong-aijia/aijia-direct")
-                LabeledContent("作者", value: "yidongaijia contributors")
-                LabeledContent("版本", value: "\(AppVersionInfo.display) (\(AppVersionInfo.build))")
+                AboutRow(title: "仓库地址", value: "https://github.com/yidong-aijia/aijia-direct")
+                AboutRow(title: "作者", value: "yidongaijia contributors")
+                AboutRow(title: "版本", value: "\(AppVersionInfo.display) (\(AppVersionInfo.build))")
             }
         }
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct AboutRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer(minLength: 12)
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
     }
 }
 
