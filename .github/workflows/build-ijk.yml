@@ -17,7 +17,9 @@ jobs:
 
       - name: Init ijkplayer sources
         working-directory: third_party
-        run: ./init-ios.sh all
+        run: |
+          chmod +x init-ios.sh version.sh tools/*.sh ios/*.sh ios/tools/*.sh
+          ./init-ios.sh all
 
       - name: Compile ffmpeg (arm64)
         working-directory: third_party/ios
