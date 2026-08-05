@@ -17,6 +17,8 @@
 		100000000000000000000008 /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* CredentialStore.swift */; };
 		100000000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* Assets.xcassets */; };
 		10000000000000000000000A /* MediaLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* MediaLibrary.swift */; };
+		10000000000000000000000B /* AppIcon-Light.png in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* AppIcon-Light.png */; };
+		10000000000000000000000C /* AppIcon-Dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* AppIcon-Dark.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +45,8 @@
 		200000000000000000000011 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		200000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		200000000000000000000013 /* MediaLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaLibrary.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* AppIcon-Light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon-Light.png; sourceTree = "<group>"; };
+		200000000000000000000015 /* AppIcon-Dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon-Dark.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,10 +82,19 @@
 				400000000000000000000003 /* App */,
 				400000000000000000000004 /* Services */,
 				400000000000000000000005 /* Views */,
+				400000000000000000000008 /* Resources */,
 				200000000000000000000009 /* Info.plist */,
-				200000000000000000000012 /* Assets.xcassets */,
 			);
 			path = AijiaDirect;
+			sourceTree = "<group>";
+		};
+		400000000000000000000008 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000014 /* AppIcon-Light.png */,
+				200000000000000000000015 /* AppIcon-Dark.png */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		400000000000000000000003 /* App */ = {
@@ -212,6 +225,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				100000000000000000000009 /* Assets.xcassets in Resources */,
+				10000000000000000000000B /* AppIcon-Light.png in Resources */,
+				10000000000000000000000C /* AppIcon-Dark.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

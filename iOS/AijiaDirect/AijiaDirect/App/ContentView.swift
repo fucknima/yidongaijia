@@ -130,33 +130,12 @@ private enum AppTheme {
     }
 }
 
-private enum AppIconImage {
-    /// Reads the actual desktop app icon from the built asset catalog.
-    static var current: UIImage? {
-        var best: UIImage?
-        var bestArea: CGFloat = 0
-
-        if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
-           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
-           let files = primary["CFBundleIconFiles"] as? [String] {
-            for name in files {
-                if let image = UIImage(named: name) {
-                    let area = image.size.width * image.size.height
-                    if area > bestArea {
-                        best = image
-                        bestArea = area
-                    }
-                }
-            }
-        }
-        return best ?? UIImage(named: "AppIcon")
-    }
-}
-
 private struct AppMark: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Group {
-            if let icon = AppIconImage.current {
+            if let icon = appIcon {
                 Image(uiImage: icon)
                     .resizable()
                     .scaledToFill()
@@ -174,6 +153,12 @@ private struct AppMark: View {
             RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
         )
+    }
+
+    private var appIcon: UIImage? {
+        // Use the matching light/dark artwork explicitly; the asset catalog
+        // icon variants are not reliably resolved by UIImage(named:).
+        UIImage(named: colorScheme == .dark ? "AppIcon-Dark" : "AppIcon-Light")
     }
 }
 
@@ -1390,11 +1375,11 @@ private struct DiagnosticsView: View {
                 .accessibilityLabel("日志操作")
             }
         }
-        .sheet(isPresented: $showingShareSheet, onDismiss: {
+        .fullScreenCover(isPresented: $showingShareSheet, onDismiss: {
             diagnosticsURL = nil
         }) {
             if let diagnosticsURL = diagnosticsURL {
-                ActivityView(activityItems: [diagnosticsURL])
+                ActivityView(activityItems: [diagnosticsURL], isPresented: $showingShareSheet)
             }
         }
     }
@@ -1512,9 +1497,9 @@ private struct MediaLibraryView: View {
                 MediaPreviewView(item: item)
             }
         }
-        .sheet(isPresented: $showingShareSheet) {
+        .fullScreenCover(isPresented: $showingShareSheet) {
             if let url = sharingItem?.url {
-                ActivityView(activityItems: [url])
+                ActivityView(activityItems: [url], isPresented: $showingShareSheet)
             }
         }
         .onAppear {
@@ -1631,10 +1616,34 @@ private struct MediaPreviewView: View {
 
 private struct ActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
+    @Binding var isPresented: Bool
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    final class Coordinator {
+        var presented = false
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        // UIActivityViewController must be presented modally; embedding its
+        // view directly in a sheet renders as an empty blank panel.
+        if isPresented, !context.coordinator.presented {
+            let activity = UIActivityViewController(
+                activityItems: activityItems,
+                applicationActivities: nil
+            )
+            activity.completionWithItemsHandler = { _, _, _, _ in
+                context.coordinator.presented = false
+                isPresented = false
+            }
+            controller.present(activity, animated: true)
+            context.coordinator.presented = true
+        }
+    }
 }

@@ -32,8 +32,8 @@ final class MediaLibrary: ObservableObject {
 
     @Published private(set) var items: [MediaItem] = []
 
-    private static let capturesSubdirectory = "AijiaMedia/截图"
-    private static let recordingsSubdirectory = "AijiaMedia/录像"
+    private static let capturesSubdirectory = "AijiaMedia/Captures"
+    private static let recordingsSubdirectory = "AijiaMedia/Recordings"
 
     static var capturesDirectory: URL {
         documentsDirectory.appendingPathComponent(capturesSubdirectory, isDirectory: true)

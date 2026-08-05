@@ -477,8 +477,10 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             ext: "mp4"
         )
         let media = VLCMedia(url: streamURL)
-        media.addOption("--sout=#standard{access=file,mux=mp4,dst=\(destination.path)}")
-        media.addOption("--sout-keep")
+        // Single-colon options are the libvlc media-option convention; the
+        // mp4 muxer finalizes the file (moov atom) when the player stops.
+        media.addOption(":sout=#standard{access=file,mux=mp4,dst=\(destination.path)}")
+        media.addOption(":sout-keep")
         media.addOption(":network-caching=300")
 
         recordingFileURL = destination
@@ -489,6 +491,30 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         status = "正在录制直播画面…"
         hasError = false
         logger.info("MEDIA", "开始录像 file=\(destination.lastPathComponent)")
+
+        // Verify that the file is actually being written shortly after start.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self = self,
+                  self.isRecording,
+                  self.recordingFileURL == destination else { return }
+            guard Self.fileExistsAndHasData(destination) else {
+                self.logger.warning("MEDIA", "录像未能启动，已取消录制 file=\(destination.lastPathComponent)")
+                self.isRecording = false
+                self.recordingFileURL = nil
+                try? FileManager.default.removeItem(at: destination)
+                if let streamURL = self.streamURL, let player = self.player {
+                    player.stop()
+                    let media = VLCMedia(url: streamURL)
+                    player.media = media
+                    player.play()
+                }
+                self.status = "录像启动失败，请重试"
+                self.hasError = true
+                return
+            }
+            self.logger.debug("MEDIA", "录像文件已确认写入 file=\(destination.lastPathComponent)")
+        }
     }
 
     private func stopRecording() {
@@ -505,13 +531,25 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         }
 
         MediaLibrary.shared.reload()
-        if let fileURL = fileURL {
+        if let fileURL = fileURL, Self.fileExistsAndHasData(fileURL) {
             status = "录像已保存到媒体库"
             logger.info("MEDIA", "录像已保存 file=\(fileURL.lastPathComponent)")
         } else {
-            status = "录像已停止"
+            if let fileURL = fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            status = "录像保存失败，未生成有效文件"
+            hasError = true
+            logger.warning("MEDIA", "录像保存失败，文件缺失或为空")
         }
-        hasError = false
+    }
+
+    private static func fileExistsAndHasData(_ url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else {
+            return false
+        }
+        return size.int64Value > 0
     }
 
     /// A stream refresh or reconnect replaces the VLC media, so an in-progress
