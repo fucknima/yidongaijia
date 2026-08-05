@@ -1270,7 +1270,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.logger.info("REPLAY", "重新建立历史回放会话成功 url=\(DiagnosticsLogger.redactedURL(url))")
                 self.scheduleKeepAlive()
             } catch is CancellationError {
-                self?.logger.debug("REPLAY", "恢复历史回放请求已取消")
+                self.logger.debug("REPLAY", "恢复历史回放请求已取消")
             } catch {
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
