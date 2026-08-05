@@ -233,7 +233,6 @@ private struct CameraSelectionMenuButton: View {
         } label: {
             Label("选择摄像头", systemImage: "video.badge.plus")
         }
-        .disabled(model.cameras.isEmpty)
     }
 }
 
@@ -241,13 +240,22 @@ private struct AboutView: View {
     var body: some View {
         List {
             Section("项目介绍") {
-                Text("爱家直连是一款直接登录移动爱家云端、读取账号摄像头并在 iPhone 本机解码播放实时与内存卡回放视频的开源客户端。")
+                Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并在 iPhone 本机解码播放实时与内存卡回放视频。")
+            }
+            Section("版本") {
+                HStack {
+                    Text("当前版本")
+                    Spacer()
+                    Text("\(AppVersionInfo.display) (\(AppVersionInfo.build))")
+                        .foregroundStyle(.secondary)
+                }
             }
             Section("仓库地址") {
-                Link("github.com/yidong-aijia/yidongaijia", destination: URL(string: "https://github.com/yidong-aijia/yidongaijia")!)
+                Link("github.com/fucknima/yidongaijia", destination: URL(string: "https://github.com/fucknima/yidongaijia")!)
             }
             Section("作者") {
-                Text("yidongaijia contributors")
+                Text("fucknima")
+                Text("99715422@qq.com")
             }
         }
         .navigationTitle("关于")

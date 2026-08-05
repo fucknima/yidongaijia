@@ -469,8 +469,6 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isLoadingRecordings = true
         hasError = false
         recordings = []
-        cameras = []
-        selectedCameraID = ""
         status = "正在读取内存卡录像…"
         logger.info(
             "REPLAY",
