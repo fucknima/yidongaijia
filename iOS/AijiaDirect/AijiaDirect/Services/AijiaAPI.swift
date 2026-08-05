@@ -238,15 +238,14 @@ final class AijiaAPI: AijiaAPIClient {
         self.password = password
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
-        // Keep the process-wide cookie jar so sequential login requests share
-        // the same server session, even if the UI creates a new API wrapper.
-        let configuration = URLSessionConfiguration.default
+        // Authentication state belongs to this client instance. An ephemeral
+        // configuration avoids persisting cookies or caches between launches,
+        // while still allowing URLSession to process response cookies normally
+        // during the current login request.
+        let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
-        configuration.httpCookieStorage = HTTPCookieStorage.shared
-        configuration.httpShouldSetCookies = true
-        configuration.httpCookieAcceptPolicy = .always
         self.session = URLSession(configuration: configuration)
         logger.info(
             "API",
@@ -633,41 +632,38 @@ final class AijiaAPI: AijiaAPIClient {
             }
         }
 
-        let storage = HTTPCookieStorage.shared
-        let cookies = response.url.flatMap { storage.cookies(for: $0) } ?? []
-        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
-        return (cookies.first { preferredNames.contains($0.name.lowercased()) } ?? cookies.first)?.value ?? ""
+        return ""
     }
 
     private func sessionCookieHeader(from response: HTTPURLResponse) -> String? {
-        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
-        if let url = response.url {
-            var fields: [String: String] = [:]
-            for (key, value) in response.allHeaderFields {
-                fields[String(describing: key)] = String(describing: value)
-            }
-            let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
-            if let cookie = cookies.first(where: { preferredNames.contains($0.name.lowercased()) }) {
-                return "\(cookie.name)=\(cookie.value)"
-            }
-        }
-
         guard let rawHeader = response.value(forHTTPHeaderField: "Set-Cookie") else {
             return nil
         }
-        for part in rawHeader.split(separator: ",") {
-            guard let first = part.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first else {
+
+        let preferredNames = Set(["hjqtoken", "hjq_token", "jsessionid", "sessionid"])
+        var firstCookie: String?
+
+        for cookie in rawHeader.components(separatedBy: ", ") {
+            guard let header = cookie.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first else {
                 continue
             }
-            let pieces = first.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
+            let pieces = header.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: true)
             guard pieces.count == 2 else { continue }
+
             let name = String(pieces[0]).trimmingCharacters(in: .whitespaces)
             let value = String(pieces[1]).trimmingCharacters(in: .whitespaces)
-            if preferredNames.contains(name.lowercased()), !value.isEmpty {
-                return "\(name)=\(value)"
+            guard !name.isEmpty, !value.isEmpty else { continue }
+
+            let cookieHeader = "\(name)=\(value)"
+            if firstCookie == nil {
+                firstCookie = cookieHeader
+            }
+            if preferredNames.contains(name.lowercased()) {
+                return cookieHeader
             }
         }
-        return nil
+
+        return firstCookie
     }
 
     private func loginVideo() async throws {
