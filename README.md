@@ -48,3 +48,7 @@ open AijiaDirect.xcworkspace
 
 - `iOS/AijiaDirect/`：完整 iOS 工程源码。
 - `.github/workflows/build-ios.yml`：直接编译工作树并上传 IPA 的工作流。
+
+## 开源许可
+
+本项目基于 [MIT License](LICENSE) 开源。
