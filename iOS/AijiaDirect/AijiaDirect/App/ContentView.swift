@@ -4,6 +4,7 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var model: PlayerViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showingCameraSelection = false
 
     var body: some View {
         Group {
@@ -15,6 +16,7 @@ struct ContentView: View {
         }
         .onAppear {
             model.autoConnectIfSaved()
+            presentCameraSelectionIfNeeded()
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -26,6 +28,21 @@ struct ContentView: View {
                 break
             }
         }
+        .onChange(of: model.shouldPresentCameraSelection) { _ in
+            presentCameraSelectionIfNeeded()
+        }
+        .sheet(isPresented: $showingCameraSelection) {
+            NavigationView {
+                CameraSelectionPage(model: model)
+            }
+        }
+    }
+
+    private func presentCameraSelectionIfNeeded() {
+        guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
+        DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择页")
+        model.consumeCameraSelectionPrompt()
+        showingCameraSelection = true
     }
 }
 
