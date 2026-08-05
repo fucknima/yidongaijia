@@ -19,6 +19,7 @@ jobs:
         working-directory: third_party
         run: |
           chmod +x init-ios.sh version.sh tools/*.sh ios/*.sh ios/tools/*.sh
+          rm -f config/module.sh && ln -s module-lite.sh config/module.sh
           ./init-ios.sh all
 
       - name: Compile ffmpeg (arm64)
