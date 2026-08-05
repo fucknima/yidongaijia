@@ -9,6 +9,8 @@ import UIKit
 
 @MainActor
 final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate {
+    private static let replayRefreshAfterBackgroundThreshold: TimeInterval = 15
+
     @Published var phone = ""
     @Published var password = ""
     @Published var cameraSelector = ""
@@ -70,6 +72,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var reconnectInFlight = false
     private var foregroundRefreshInFlight = false
     private var didEnterBackgroundWhilePlaying = false
+    private var replayBackgroundedAt: Date?
     private var didUserLogout = false
     private var didAutoConnect = false
     private var isHistoryVisible = false
@@ -352,14 +355,21 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         guard shouldPlay, isAuthenticated else { return }
         didEnterBackgroundWhilePlaying = true
         hasError = false
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = nil
         if isReplay {
             cancelReplayRateVerification()
+            replaySeekTask?.cancel()
+            replaySeekTask = nil
+            replaySeekGeneration &+= 1
             replayProgressTimer?.invalidate()
             replayProgressTimer = nil
             player?.pause()
             isPlaying = false
+            replayBackgroundedAt = Date()
             status = "应用已进入后台，历史回放已暂停"
         } else {
+            replayBackgroundedAt = nil
             status = "应用已进入后台，回前台会刷新实时画面"
         }
         logger.info(
@@ -1183,28 +1193,111 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func resumeReplayAfterForeground() {
+        let backgroundedAt = replayBackgroundedAt
+        replayBackgroundedAt = nil
         guard isReplay, streamURL != nil else { return }
 
-        if let player = player {
-            player.drawable = drawable
-            player.play()
-            applyReplayRate(to: player)
-            isPlaying = true
-            hasError = false
-            scheduleReplayProgressTimer()
-        } else if activeSurfaceHost != nil {
-            preparePlayerIfPossible()
-            isPlaying = player != nil
-        } else {
-            // SwiftUI may detach the representable while the app is backgrounded.
-            // Force a fresh host so mountPlayerSurface(in:role:) can resume output.
-            playerViewID = UUID()
-            isPlaying = false
-            logger.debug("REPLAY", "回到前台时播放器视图已卸载，等待重新挂载")
+        if let backgroundedAt = backgroundedAt,
+           Date().timeIntervalSince(backgroundedAt) < Self.replayRefreshAfterBackgroundThreshold {
+            if let player = player {
+                player.drawable = drawable
+                player.play()
+                applyReplayRate(to: player)
+                isPlaying = true
+                hasError = false
+                scheduleReplayProgressTimer()
+            } else if activeSurfaceHost != nil {
+                preparePlayerIfPossible()
+                isPlaying = player != nil
+            } else {
+                // SwiftUI may detach the representable while the app is backgrounded.
+                // Force a fresh host so mountPlayerSurface(in:role:) can resume output.
+                playerViewID = UUID()
+                isPlaying = false
+                logger.debug("REPLAY", "回到前台时播放器视图已卸载，等待重新挂载")
+            }
+
+            scheduleKeepAlive()
+            logger.info("REPLAY", "回到前台后恢复历史回放播放器")
+            return
         }
 
-        scheduleKeepAlive()
-        logger.info("REPLAY", "回到前台后恢复历史回放播放器")
+        refreshReplaySessionAfterBackground()
+    }
+
+    private func refreshReplaySessionAfterBackground() {
+        guard isReplay, let recording = replayRecording, let client = api else { return }
+
+        replaySeekTask?.cancel()
+        replaySeekTask = nil
+        replaySeekGeneration &+= 1
+        let operationID = playbackOperationID
+        let resumeTimestamp = currentReplayAbsoluteSecond()
+        logger.info("REPLAY", "回放切后台超过阈值，重新建立回放会话 timestamp=\(resumeTimestamp)")
+        status = "正在恢复历史回放…"
+        isLoading = true
+        isPlaying = false
+        hasError = false
+        replayProgressTimer?.invalidate()
+        replayProgressTimer = nil
+        player?.pause()
+
+        let task = Task(priority: .userInitiated) { [weak self, client, operationID, resumeTimestamp] in
+            guard let self = self else { return }
+
+            do {
+                try? await client.stopReplay()
+                try Task.checkCancellation()
+                let url = try await client.playRecording(at: resumeTimestamp)
+                try Task.checkCancellation()
+                guard self.isCurrentPlaybackOperation(operationID),
+                      self.isReplay,
+                      self.api === client else { return }
+
+                self.streamURL = url
+                self.replayPlaybackStartTime = resumeTimestamp
+                self.replayCurrentSecond = max(0, min(self.replayDurationSecond, resumeTimestamp - recording.startTime))
+                self.replayPosition = self.replayDurationSecond > 0
+                    ? Float(Double(self.replayCurrentSecond) / Double(self.replayDurationSecond))
+                    : 0
+                self.stopPlaybackOnly()
+                self.playerViewID = UUID()
+                self.preparePlayerIfPossible()
+                self.isLoading = false
+                self.isPlaying = self.player != nil
+                self.hasError = false
+                self.status = "正在播放内存卡录像"
+                self.logger.info("REPLAY", "重新建立历史回放会话成功 url=\(DiagnosticsLogger.redactedURL(url))")
+                self.scheduleKeepAlive()
+            } catch is CancellationError {
+                self?.logger.debug("REPLAY", "恢复历史回放请求已取消")
+            } catch {
+                guard let self = self,
+                      self.isCurrentPlaybackOperation(operationID),
+                      self.isReplay else { return }
+                self.isLoading = false
+                self.hasError = true
+                self.status = "恢复历史回放失败：\(error.localizedDescription)"
+                self.logger.error("REPLAY", "恢复历史回放失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
+    }
+
+    private func currentReplayAbsoluteSecond() -> Int64 {
+        guard let recording = replayRecording else { return 0 }
+        let lowerBound = recording.playbackStartTime
+        let upperBound = max(lowerBound, recording.endTime - 1)
+        let relativeSecond: Int64
+        if let player = player, player.isPlaying {
+            let milliseconds = max(0, Int64(player.time.intValue))
+            let absolute = (replayPlaybackStartTime ?? recording.playbackStartTime) + milliseconds / 1_000
+            relativeSecond = max(0, min(replayDurationSecond, absolute - recording.startTime))
+        } else {
+            relativeSecond = max(0, min(replayDurationSecond, replayCurrentSecond))
+        }
+        let absolute = recording.startTime + relativeSecond
+        return min(max(absolute, lowerBound), upperBound)
     }
 
     private func stopPlaybackOnly() {
@@ -1230,6 +1323,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         cancelReplayRateVerification()
         replaySeekTask?.cancel()
         replaySeekTask = nil
+        replayBackgroundedAt = nil
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         replayRecording = nil

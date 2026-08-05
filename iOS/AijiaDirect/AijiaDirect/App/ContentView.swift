@@ -895,13 +895,23 @@ private struct DiagnosticsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
-                    .foregroundStyle(.green)
-                Spacer()
-                Text("\(logger.visibleLines.count) 行")
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 3) {
+                HStack {
+                    Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
+                        .foregroundStyle(.green)
+                    Spacer()
+                    Text("\(logger.visibleLines.count) 行")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                if logger.visibleLevels.count != DiagnosticsLogger.Level.allCases.count {
+                    HStack {
+                        Text(filterSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
@@ -950,6 +960,26 @@ private struct DiagnosticsView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
+                        logger.visibleLevels = Set(DiagnosticsLogger.Level.allCases)
+                    } label: {
+                        if logger.visibleLevels == Set(DiagnosticsLogger.Level.allCases) {
+                            Label("显示全部", systemImage: "checkmark")
+                        } else {
+                            Text("显示全部")
+                        }
+                    }
+                    Divider()
+                    ForEach(DiagnosticsLogger.Level.allCases, id: \.self) { level in
+                        Toggle(level.title, isOn: levelBinding(level))
+                    }
+                } label: {
+                    Label("筛选", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityLabel("日志等级筛选")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
                         guard let url = model.prepareDiagnosticsExport() else { return }
                         diagnosticsURL = url
                         showingShareSheet = true
@@ -975,6 +1005,26 @@ private struct DiagnosticsView: View {
                 ActivityView(activityItems: [diagnosticsURL])
             }
         }
+    }
+
+    private func levelBinding(_ level: DiagnosticsLogger.Level) -> Binding<Bool> {
+        Binding(
+            get: { logger.visibleLevels.contains(level) },
+            set: { isOn in
+                if isOn {
+                    logger.visibleLevels.insert(level)
+                } else {
+                    logger.visibleLevels.remove(level)
+                }
+            }
+        )
+    }
+
+    private var filterSummary: String {
+        let enabled = DiagnosticsLogger.Level.allCases
+            .filter { logger.visibleLevels.contains($0) }
+            .map(\.title)
+        return enabled.isEmpty ? "已隐藏全部等级" : "已筛选：\(enabled.joined(separator: "、"))"
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
