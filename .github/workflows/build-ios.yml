@@ -31,14 +31,34 @@ jobs:
           echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
           echo "Using version ${short_version}, build ${build_version}"
 
-      - name: Download IJKMediaFramework
-        working-directory: iOS/AijiaDirect
+      - name: Resolve latest IJK framework build
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p IJKMediaFramework
-          curl -sL -o IJKMediaFramework.framework.zip \
-            "https://github.com/fucknima/yidongaijia/releases/download/ijk-0.8.8-record/IJKMediaFramework.framework.zip"
-          unzip -q -o IJKMediaFramework.framework.zip -d IJKMediaFramework
-          test -d IJKMediaFramework/IJKMediaFramework.framework
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
+            --workflow build-ijk.yml \
+            --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ]; then
+            echo "No successful IJKMediaFramework build found" >&2
+            exit 1
+          fi
+          echo "IJK_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Download IJKMediaFramework
+        uses: actions/download-artifact@v4
+        with:
+          name: IJKMediaFramework
+          run-id: ${{ env.IJK_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: iOS/AijiaDirect/IJKMediaFramework
+
+      - name: Unpack IJKMediaFramework
+        working-directory: iOS/AijiaDirect/IJKMediaFramework
+        run: |
+          unzip -q -o IJKMediaFramework.framework.zip
+          rm -f IJKMediaFramework.framework.zip
+          test -d IJKMediaFramework.framework
 
       - name: Install CocoaPods and dependencies
         working-directory: iOS/AijiaDirect

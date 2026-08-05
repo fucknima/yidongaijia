@@ -55,15 +55,3 @@ jobs:
           name: IJKMediaFramework
           path: third_party/ios/IJKMediaPlayer/build/Build/Products/Release-iphoneos/IJKMediaFramework.framework.zip
           retention-days: 14
-
-      - name: Publish framework to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd third_party/ios/IJKMediaPlayer/build/Build/Products/Release-iphoneos
-          gh release create ijk-0.8.8-record IJKMediaFramework.framework.zip \
-            --repo "${{ github.repository }}" \
-            --title "IJKMediaFramework (record)" \
-            --notes "ijkplayer k0.8.8 fork with packet-tee recording support." 2>/dev/null || \
-            gh release upload ijk-0.8.8-record IJKMediaFramework.framework.zip \
-              --repo "${{ github.repository }}" --clobber
