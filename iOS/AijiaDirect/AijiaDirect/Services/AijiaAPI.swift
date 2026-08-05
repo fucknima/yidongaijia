@@ -11,7 +11,7 @@ import Security
 import Darwin
 #endif
 
-struct AijiaCamera: Identifiable {
+struct AijiaCamera: Identifiable, Codable {
     let id: String
     let name: String
     let macID: String
@@ -268,7 +268,9 @@ final class AijiaAPI: AijiaAPIClient {
 
     func cameras() async throws -> [AijiaCamera] {
         try await authenticate()
-        return try cameraList().map { try AijiaCamera($0) }
+        let rawCameras = try await cameraList()
+        logger.info("API", "摄像头列表原始数据读取完成 count=\(rawCameras.count)")
+        return try rawCameras.map { try AijiaCamera($0) }
     }
 
     func selectCamera(_ camera: AijiaCamera) {
@@ -288,7 +290,9 @@ final class AijiaAPI: AijiaAPIClient {
                     try await loginVideo()
                 }
                 if camera == nil {
-                    camera = try await selectCamera(from: cameraList())
+                    let rawCameras = try await cameraList()
+                    logger.debug("API", "实时流前读取摄像头列表 count=\(rawCameras.count)")
+                    camera = try selectCamera(from: rawCameras)
                 }
 
                 guard var selectedCamera = camera else {
