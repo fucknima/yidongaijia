@@ -190,6 +190,9 @@ private struct AboutView: View {
         }
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示关于页面")
+        }
     }
 }
 
@@ -198,6 +201,7 @@ private struct PlayerScreen: View {
     @State private var showingHistory = false
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
+    @State private var showingAbout = false
 
     var body: some View {
         NavigationView {
@@ -302,7 +306,10 @@ private struct PlayerScreen: View {
                                 }
                             }
                         }
-                        NavigationLink(destination: AboutView()) {
+                        Button {
+                            DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
+                            showingAbout = true
+                        } label: {
                             Label("关于", systemImage: "info.circle")
                         }
                         Button(role: .destructive) {
@@ -320,6 +327,11 @@ private struct PlayerScreen: View {
         .sheet(isPresented: $showingDiagnostics) {
             NavigationView {
                 DiagnosticsView(model: model)
+            }
+        }
+        .sheet(isPresented: $showingAbout) {
+            NavigationView {
+                AboutView()
             }
         }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
@@ -347,7 +359,7 @@ private struct PlayerSurface: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.clear)
+                .background(Color.clear)
                 .padding(10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
@@ -385,7 +397,7 @@ private struct FullscreenPlayerView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.clear)
+                .background(Color.clear)
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
