@@ -36,6 +36,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var playerViewID = UUID()
     @Published private(set) var networkSpeedText = "-- KB/s"
     @Published private(set) var shouldPresentCameraSelection = false
+    @Published private(set) var isRecording = false
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -75,6 +76,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private var isHistoryVisible = false
     private var lastLoggedPlayerState = ""
     private var lastLoggedPlaybackSecond = -10
+    private var recordingFileURL: URL?
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
@@ -428,6 +430,101 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 )
             }
         }
+    }
+
+    func captureSnapshot() {
+        guard let player = player, player.isPlaying, !isReplay, !isRecording else {
+            status = isReplay ? "历史回放时不能截图" : "当前没有可截图的直播画面"
+            hasError = true
+            return
+        }
+
+        let destination = MediaLibrary.uniqueFileURL(
+            in: MediaLibrary.capturesDirectory,
+            baseName: "Live",
+            ext: "png"
+        )
+        player.saveVideoSnapshot(at: destination.path, withWidth: 0, andHeight: 0)
+        status = "截图已保存到媒体库"
+        hasError = false
+        logger.info("MEDIA", "已请求截图 file=\(destination.lastPathComponent)")
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            MediaLibrary.shared.reload()
+        }
+    }
+
+    func toggleRecording() {
+        guard let streamURL = streamURL, !isReplay else {
+            status = isReplay ? "历史回放时不能录像" : "请先连接摄像头"
+            hasError = true
+            return
+        }
+
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording(streamURL: streamURL)
+        }
+    }
+
+    private func startRecording(streamURL: URL) {
+        guard let player = player, !isRecording else { return }
+        let destination = MediaLibrary.uniqueFileURL(
+            in: MediaLibrary.recordingsDirectory,
+            baseName: "Live",
+            ext: "mp4"
+        )
+        let media = VLCMedia(url: streamURL)
+        media.addOption("--sout=#standard{access=file,mux=mp4,dst=\(destination.path)}")
+        media.addOption("--sout-keep")
+        media.addOption(":network-caching=300")
+
+        recordingFileURL = destination
+        isRecording = true
+        player.stop()
+        player.media = media
+        player.play()
+        status = "正在录制直播画面…"
+        hasError = false
+        logger.info("MEDIA", "开始录像 file=\(destination.lastPathComponent)")
+    }
+
+    private func stopRecording() {
+        guard isRecording else { return }
+        let fileURL = recordingFileURL
+        recordingFileURL = nil
+        isRecording = false
+
+        if let streamURL = streamURL, let player = player {
+            player.stop()
+            let media = VLCMedia(url: streamURL)
+            player.media = media
+            player.play()
+        }
+
+        MediaLibrary.shared.reload()
+        if let fileURL = fileURL {
+            status = "录像已保存到媒体库"
+            logger.info("MEDIA", "录像已保存 file=\(fileURL.lastPathComponent)")
+        } else {
+            status = "录像已停止"
+        }
+        hasError = false
+    }
+
+    /// A stream refresh or reconnect replaces the VLC media, so an in-progress
+    /// recording can no longer be finalized. Discard the incomplete file.
+    private func discardInterruptedRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        if let fileURL = recordingFileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+            logger.warning("MEDIA", "录像中断，已删除未完成文件 file=\(fileURL.lastPathComponent)")
+        }
+        recordingFileURL = nil
+        MediaLibrary.shared.reload()
     }
 
     func loadRecordings(for date: Date, force: Bool = false) {
@@ -1013,6 +1110,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             status = "已重连，正在本机解码"
             hasError = false
             logger.info("PLAYER", "重连成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
+            discardInterruptedRecording()
             player?.delegate = nil
             player?.stop()
             player = nil
@@ -1061,6 +1159,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 self.hasError = false
                 self.status = "已回到前台，正在本机播放"
                 self.logger.info("PLAYER", "回前台刷新实时流成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
+                self.discardInterruptedRecording()
                 self.preparePlayerIfPossible()
                 self.scheduleKeepAlive()
             } catch {
@@ -1187,6 +1286,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     }
 
     private func stopPlaybackOnly() {
+        discardInterruptedRecording()
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
         networkSpeedTimer?.invalidate()
