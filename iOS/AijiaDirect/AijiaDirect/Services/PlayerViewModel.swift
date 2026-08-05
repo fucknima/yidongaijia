@@ -1272,8 +1272,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             } catch is CancellationError {
                 self.logger.debug("REPLAY", "恢复历史回放请求已取消")
             } catch {
-                guard let self = self,
-                      self.isCurrentPlaybackOperation(operationID),
+                guard self.isCurrentPlaybackOperation(operationID),
                       self.isReplay else { return }
                 self.isLoading = false
                 self.hasError = true
