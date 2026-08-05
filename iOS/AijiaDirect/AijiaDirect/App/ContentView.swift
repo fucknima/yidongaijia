@@ -33,6 +33,19 @@ private struct LoginView: View {
     @ObservedObject var model: PlayerViewModel
     @FocusState private var focusedField: Field?
 
+    private var passwordBinding: Binding<String> {
+        Binding(
+            get: { model.password },
+            set: { newValue in
+                if newValue.isEmpty, !model.password.isEmpty {
+                    model.password.removeLast()
+                } else {
+                    model.password = newValue
+                }
+            }
+        )
+    }
+
     private enum Field: Hashable {
         case phone
         case password
@@ -58,14 +71,18 @@ private struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .phone)
 
-                            SecureField("移动爱家密码", text: $model.password)
+                            SecureField("移动爱家密码", text: passwordBinding)
                                 .textContentType(.password)
                                 .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .password)
 
-                            TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($focusedField, equals: .camera)
+                            if model.cameras.isEmpty {
+                                TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
+                                    .textFieldStyle(.roundedBorder)
+                                    .focused($focusedField, equals: .camera)
+                            } else {
+                                CameraSelectionList(model: model)
+                            }
 
                             Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
@@ -79,7 +96,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
+                                    Text(model.isLoading ? "正在登录…" : (model.cameraSelector.isEmpty ? "登录并读取摄像头" : "登录并播放"))
                                 }
                                 .frame(maxWidth: .infinity)
                             }
@@ -124,6 +141,55 @@ private struct LoginView: View {
                 }
             }
         }
+    }
+}
+
+private struct CameraSelectionList: View {
+    @ObservedObject var model: PlayerViewModel
+
+    var body: some View {
+        GroupBox("选择摄像头") {
+            VStack(spacing: 8) {
+                ForEach(model.cameras) { camera in
+                    Button {
+                        model.playCamera(camera)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(camera.name)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(camera.macID)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if model.selectedCameraID == camera.macID {
+                                Image(systemName: "checkmark.circle.fill")
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+}
+
+private struct AboutView: View {
+    var body: some View {
+        List {
+            Section("项目介绍") {
+                Text("爱家直连是一款直接登录移动爱家云端、读取账号摄像头并在 iPhone 本机解码播放实时与内存卡回放视频的开源客户端。")
+            }
+            Section("仓库地址") {
+                Link("github.com/yidong-aijia/yidongaijia", destination: URL(string: "https://github.com/yidong-aijia/yidongaijia")!)
+            }
+            Section("作者") {
+                Text("yidongaijia contributors")
+            }
+        }
+        .navigationTitle("关于")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -188,6 +254,10 @@ private struct PlayerScreen: View {
 
                     StatusText(model: model)
 
+                    if model.isAuthenticated, model.streamURL == nil, !model.cameras.isEmpty {
+                        CameraSelectionList(model: model)
+                    }
+
                     if model.isAuthenticated {
                         PTZControlPanel(model: model)
 
@@ -223,6 +293,24 @@ private struct PlayerScreen: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Text("版本 \(AppVersionInfo.display)")
+                        if !model.cameras.isEmpty {
+                            Section("摄像头") {
+                                ForEach(model.cameras) { camera in
+                                    Button {
+                                        model.playCamera(camera)
+                                    } label: {
+                                        if model.selectedCameraID == camera.macID {
+                                            Label(camera.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(camera.name)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        NavigationLink(destination: AboutView()) {
+                            Label("关于", systemImage: "info.circle")
+                        }
                         Button(role: .destructive) {
                             model.logout()
                         } label: {
@@ -260,14 +348,25 @@ private struct PlayerSurface: View {
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
 
+            Text(model.networkSpeedText)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.35), in: Capsule())
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
             Button(action: onFullscreen) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.headline)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
             .accessibilityLabel("横屏全屏")
-            .padding(10)
+            .padding(4)
         }
     }
 }
@@ -287,6 +386,15 @@ private struct FullscreenPlayerView: View {
                 .background(Color.black)
                 .ignoresSafeArea()
 
+            Text(model.networkSpeedText)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.35), in: Capsule())
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
             if model.isReplay {
                 VStack {
                     Spacer()
@@ -303,10 +411,12 @@ private struct FullscreenPlayerView: View {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.headline)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .frame(width: 58, height: 58)
+            .contentShape(Rectangle())
             .accessibilityLabel("退出全屏")
-            .padding()
+            .padding(4)
         }
         .statusBar(hidden: true)
         .interactiveDismissDisabled()
@@ -636,10 +746,19 @@ private struct ReplayControls: View {
         }
     }
 
+    private var displaySecond: Int64 {
+        isEditing ? previewSecond : model.replayCurrentSecond
+    }
+
+    private var previewSecond: Int64 {
+        guard model.replayDurationSecond > 0 else { return 0 }
+        return max(0, min(model.replayDurationSecond, Int64((Double(model.replayDurationSecond) * sliderValue).rounded())))
+    }
+
     private var controlsContent: some View {
         VStack(spacing: presentation == .fullscreen ? 6 : 8) {
             HStack {
-                Text(formatTime(model.replayCurrentSecond))
+                Text(formatTime(displaySecond))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(secondaryForegroundColor)
                 Spacer()

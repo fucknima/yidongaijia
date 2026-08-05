@@ -11,6 +11,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published var rememberLogin = true
     @Published private(set) var status = "请输入移动爱家账号"
     @Published private(set) var cameraName = ""
+    @Published private(set) var cameras: [AijiaCamera] = []
+    @Published private(set) var selectedCameraID = ""
     @Published private(set) var streamURL: URL?
     @Published private(set) var isLoading = false
     @Published private(set) var isPlaying = false
@@ -27,6 +29,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
     @Published private(set) var playerViewID = UUID()
+    @Published private(set) var networkSpeedText = "-- KB/s"
 
     private var api: AijiaAPIClient?
     private var player: VLCMediaPlayer?
@@ -55,6 +58,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private weak var fullscreenSurfaceHost: UIView?
     private weak var activeSurfaceHost: UIView?
     private var keepAliveTimer: Timer?
+    private var networkSpeedTimer: Timer?
     private var shouldPlay = false
     private var reconnectInFlight = false
     private var foregroundRefreshInFlight = false
@@ -81,6 +85,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             phone = savedLogin.phone
             password = savedLogin.password
             cameraSelector = savedLogin.cameraSelector
+            selectedCameraID = savedLogin.cameraSelector
             hasSavedLogin = true
             shouldShowLogin = !autoConnectEnabled
             didUserLogout = !autoConnectEnabled
@@ -130,13 +135,33 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         hasError = false
         cameraName = ""
         streamURL = nil
-        status = "正在登录并获取实时地址…"
+        status = selectedCamera.isEmpty ? "正在登录并读取摄像头…" : "正在登录并获取实时地址…"
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
             do {
-                let stream = try await client.openStream()
+                try await client.authenticate()
+                let availableCameras = try await client.cameras()
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
+                      self.shouldPlay,
+                      self.api === client else { return }
+                cameras = availableCameras
+                isAuthenticated = true
+                shouldShowLogin = false
+
+                guard let selected = cameraToPlay(from: availableCameras, selector: selectedCamera) else {
+                    isLoading = false
+                    isPlaying = false
+                    hasError = false
+                    status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像头"
+                    return
+                }
+
+                client.selectCamera(selected)
+                cameraSelector = selected.macID
+                selectedCameraID = selected.macID
+                let stream = try await client.openStream()
+                guard self.isCurrentPlaybackOperation(operationID),
                       self.shouldPlay,
                       self.api === client else { return }
                 cameraName = stream.camera.name
@@ -145,14 +170,12 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
                 isPlaying = true
                 status = "已连接，正在本机解码"
                 hasError = false
-                isAuthenticated = true
-                shouldShowLogin = false
 
                 if shouldRememberLogin {
                     if credentialStore.save(
                         phone: trimmedPhone,
                         password: loginPassword,
-                        cameraSelector: selectedCamera
+                        cameraSelector: self.cameraSelector
                     ) {
                         hasSavedLogin = true
                         credentialStore.setAutoConnectEnabled(true)
@@ -186,6 +209,29 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         playbackTask = task
     }
 
+    func playCamera(_ camera: AijiaCamera) {
+        cameraSelector = camera.macID
+        selectedCameraID = camera.macID
+        guard rememberLogin, !phone.isEmpty, !password.isEmpty else {
+            start()
+            return
+        }
+        _ = credentialStore.save(phone: phone.trimmingCharacters(in: .whitespacesAndNewlines), password: password, cameraSelector: camera.macID)
+        credentialStore.setAutoConnectEnabled(true)
+        start()
+    }
+
+    private func cameraToPlay(from availableCameras: [AijiaCamera], selector: String) -> AijiaCamera? {
+        guard !availableCameras.isEmpty else { return nil }
+        let normalizedSelector = AijiaSigning.normalized(selector)
+        guard !normalizedSelector.isEmpty else { return nil }
+        return availableCameras.first { camera in
+            [camera.macID, camera.name, camera.id]
+                .map(AijiaSigning.normalized)
+                .contains(normalizedSelector)
+        }
+    }
+
     func stop() {
         logger.info("PLAYER", "停止播放")
         shouldPlay = false
@@ -203,6 +249,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isPlaying = false
         isAuthenticated = false
         recordings = []
+        cameras = []
+        selectedCameraID = ""
         isLoadingRecordings = false
         status = "已停止"
         hasError = false
@@ -271,7 +319,14 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         if isReplay {
             logger.info("REPLAY", "应用回到前台，保留历史回放进度")
             status = "已回到前台，继续历史回放"
+            shouldPlay = true
             resumeReplayAfterForeground()
+            return
+        }
+
+        guard streamURL != nil else {
+            status = "已回到前台，未启动实时画面"
+            logger.info("PLAYER", "回到前台时没有实时流，跳过自动播放")
             return
         }
 
@@ -351,6 +406,8 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         isLoadingRecordings = true
         hasError = false
         recordings = []
+        cameras = []
+        selectedCameraID = ""
         status = "正在读取内存卡录像…"
         logger.info(
             "REPLAY",
@@ -826,6 +883,7 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
         lastLoggedPlaybackSecond = -10
         logger.info("PLAYER", "开始本机解码 url=\(DiagnosticsLogger.redactedURL(streamURL))")
         player.play()
+        scheduleNetworkSpeedTimer()
         if isReplay {
             applyReplayRate(to: player)
             scheduleReplayProgressTimer()
@@ -860,6 +918,19 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
             let position = Float(Double(relativeSecond) / Double(replayDurationSecond))
             if abs(replayPosition - position) > 0.0005 {
                 replayPosition = position
+            }
+        }
+    }
+
+    private func scheduleNetworkSpeedTimer() {
+        networkSpeedTimer?.invalidate()
+        networkSpeedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, let media = self.player?.media else { return }
+                let kbps = max(0, Double(media.statistics.inputBitrate) * 1_000)
+                self.networkSpeedText = kbps >= 1024
+                    ? String(format: "%.1f MB/s", kbps / 1024)
+                    : String(format: "%.0f KB/s", kbps)
             }
         }
     }
@@ -1013,6 +1084,9 @@ final class PlayerViewModel: NSObject, ObservableObject, VLCMediaPlayerDelegate 
     private func stopPlaybackOnly() {
         keepAliveTimer?.invalidate()
         keepAliveTimer = nil
+        networkSpeedTimer?.invalidate()
+        networkSpeedTimer = nil
+        networkSpeedText = "-- KB/s"
         cancelReplayRateVerification()
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
