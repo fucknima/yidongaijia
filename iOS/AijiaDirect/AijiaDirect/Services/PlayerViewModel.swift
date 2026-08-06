@@ -1012,7 +1012,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
         // Mirrors the official ijkplayer demo setup: default options
         // (VideoToolbox hardware decode) plus a live-stream friendly cache.
-        let options = IJKFFOptions.byDefault()
+        guard let options = IJKFFOptions.byDefault() else {
+            status = "播放器初始化失败"
+            hasError = true
+            logger.error("PLAYER", "IJK 播放器初始化失败（无法创建选项）")
+            return
+        }
         options.setPlayerOptionIntValue(300, forKey: "network-caching")
         options.setPlayerOptionIntValue(1, forKey: "infbuf")
         guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: options) else {
