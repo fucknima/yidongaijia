@@ -1686,20 +1686,29 @@ private struct ActivityView: UIViewControllerRepresentable {
     }
 }
 
-/// Presents the system share sheet from the topmost view controller. Sharing
-/// through SwiftUI sheets is unreliable on some iOS versions (blank panel on
-/// first presentation), so we present UIActivityViewController directly.
+/// Presents the system share sheet from the topmost presented view
+/// controller. Sharing through SwiftUI sheets is unreliable on some iOS
+/// versions (blank panel on first presentation), and presenting from the root
+/// controller silently fails while another sheet (the media library itself)
+/// is on screen, so we walk the presentation chain instead.
 private func presentSystemShare(activityItems: [Any]) {
     guard let scene = UIApplication.shared.connectedScenes
         .compactMap({ $0 as? UIWindowScene })
         .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
         .compactMap({ $0 as? UIWindowScene }).first,
-        let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController,
-        root.presentedViewController == nil else {
+        var top = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
         return
     }
+    while let presented = top.presentedViewController {
+        top = presented
+    }
+    guard top.presentedViewController == nil else { return }
     let activity = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    root.present(activity, animated: true)
+    // Defer until any context menu or swipe action dismiss animation settles.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak activity] in
+        guard let activity = activity, top.presentedViewController == nil else { return }
+        top.present(activity, animated: true)
+    }
 }
 
 /// Embeds a UIActivityViewController directly as sheet content. This works on
