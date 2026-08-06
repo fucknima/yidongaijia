@@ -5204,9 +5204,12 @@ static void ffp_record_collect_params_l(FFPlayer *ffp, const uint8_t *data, int 
             uint8_t *buf = (uint8_t *)av_realloc(ffp->record_video_extradata, need);
             if (buf) {
                 ffp->record_video_extradata = buf;
-                AV_WB32(ffp->record_video_extradata + ffp->record_video_extradata_size, 1);
-                memcpy(ffp->record_video_extradata + ffp->record_video_extradata_size + 4,
-                       data + nal_start, nal_size);
+                uint8_t *dst = ffp->record_video_extradata + ffp->record_video_extradata_size;
+                dst[0] = 0;
+                dst[1] = 0;
+                dst[2] = 0;
+                dst[3] = 1;
+                memcpy(dst + 4, data + nal_start, nal_size);
                 ffp->record_video_extradata_size = need;
                 if (ffp->record_video_codec_id == AV_CODEC_ID_HEVC) {
                     if (nal_type == 32) ffp->record_has_vps = 1;
