@@ -729,6 +729,14 @@ typedef struct FFPlayer {
     int64_t          record_last_pts;
     int              record_enabled;
     int              record_mapped_streams;
+    int              record_header_written;
+    int              record_packet_count;
+    uint8_t         *record_video_extradata;
+    int              record_video_extradata_size;
+    int              record_has_vps;
+    int              record_has_sps;
+    int              record_has_pps;
+    int              record_video_codec_id;
 } FFPlayer;
 
 #define fftime_to_milliseconds(ts) (av_rescale(ts, 1000, AV_TIME_BASE))

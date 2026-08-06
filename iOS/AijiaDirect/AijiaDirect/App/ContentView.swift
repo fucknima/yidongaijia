@@ -1422,8 +1422,6 @@ private struct MediaLibraryView: View {
     @ObservedObject private var theme = ThemeStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var previewItem: MediaItem?
-    @State private var sharingItem: MediaItem?
-    @State private var showingShareSheet = false
 
     var body: some View {
         Group {
@@ -1457,8 +1455,7 @@ private struct MediaLibraryView: View {
                                 Label("删除", systemImage: "trash")
                             }
                             Button {
-                                sharingItem = item
-                                showingShareSheet = true
+                                presentSystemShare(activityItems: [sharePayload(for: item)])
                             } label: {
                                 Label("分享", systemImage: "square.and.arrow.up")
                             }
@@ -1466,8 +1463,7 @@ private struct MediaLibraryView: View {
                         }
                         .contextMenu {
                             Button {
-                                sharingItem = item
-                                showingShareSheet = true
+                                presentSystemShare(activityItems: [sharePayload(for: item)])
                             } label: {
                                 Label("分享", systemImage: "square.and.arrow.up")
                             }
@@ -1497,21 +1493,14 @@ private struct MediaLibraryView: View {
                 MediaPreviewView(item: item)
             }
         }
-        .sheet(isPresented: $showingShareSheet, onDismiss: {
-            sharingItem = nil
-        }) {
-            if let item = sharingItem {
-                EmbeddedActivityView(activityItems: [sharePayload(for: item)])
-            }
-        }
         .onAppear {
             library.reload()
         }
     }
 
-    /// Images are shared as UIImage so the system share sheet does not depend
-    /// on QuickLook preview generation for freshly written files (which can
-    /// render a blank panel on first share). Videos keep sharing the file URL.
+    /// Images are shared as UIImage so the share sheet does not depend on
+    /// QuickLook preview generation for freshly written files. Videos keep
+    /// sharing the file URL.
     private func sharePayload(for item: MediaItem) -> Any {
         switch item.kind {
         case .image:
@@ -1697,6 +1686,22 @@ private struct ActivityView: UIViewControllerRepresentable {
     }
 }
 
+/// Presents the system share sheet from the topmost view controller. Sharing
+/// through SwiftUI sheets is unreliable on some iOS versions (blank panel on
+/// first presentation), so we present UIActivityViewController directly.
+private func presentSystemShare(activityItems: [Any]) {
+    guard let scene = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene }).first,
+        let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController,
+        root.presentedViewController == nil else {
+        return
+    }
+    let activity = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    root.present(activity, animated: true)
+}
+
 /// Embeds a UIActivityViewController directly as sheet content. This works on
 /// some iOS versions for plain documents and keeps the diagnostics export
 /// flow unchanged from the original working build.
@@ -1704,22 +1709,7 @@ private struct EmbeddedActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(
-            activityItems: activityItems,
-            applicationActivities: nil
-        )
-        // Pre-generate the preview so the first share is not blank and the
-        // panel shows the shared image instead of an empty placeholder.
-        if let image = activityItems.first as? UIImage {
-            let previewController = UIViewController()
-            let imageView = UIImageView(image: image)
-            imageView.contentMode = .scaleAspectFit
-            imageView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
-            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            previewController.view.addSubview(imageView)
-            controller.setValue(previewController, forKey: "previewViewController")
-        }
-        return controller
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}

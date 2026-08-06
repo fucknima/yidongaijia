@@ -3059,6 +3059,8 @@ static int is_realtime(AVFormatContext *s)
 
 /* this thread gets the stream from the disk or the network */
 static void ffp_record_write_packet_l(FFPlayer *ffp, AVPacket *pkt, AVFormatContext *ic);
+static void ffp_record_collect_params_l(FFPlayer *ffp, const uint8_t *data, int size);
+static int ffp_record_params_ready_l(FFPlayer *ffp);
 static int read_thread(void *arg)
 {
     FFPlayer *ffp = arg;
@@ -5070,6 +5072,60 @@ static void ffp_record_write_packet_l(FFPlayer *ffp, AVPacket *pkt, AVFormatCont
         return;
     }
 
+    /* Collect H.264/H.265 parameter sets from the stream before writing the
+     * container header. Live TS recordings start mid-stream; without
+     * VPS/SPS/PPS the mp4 muxer produces an empty hvcC/avcC and players
+     * cannot decode the file. Mirrors the official app's behavior of fixing
+     * the extradata when finalizing a recording. */
+    if (!ffp->record_header_written
+            && ost->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
+            && (ost->codecpar->codec_id == AV_CODEC_ID_H264
+                || ost->codecpar->codec_id == AV_CODEC_ID_HEVC)) {
+        ffp_record_collect_params_l(ffp, pkt->data, pkt->size);
+    }
+
+    if (!ffp->record_header_written) {
+        /* Hold packets until the header is written; the muxer queues are not
+         * usable before avformat_write_header. */
+        ffp->record_packet_count++;
+        if (ffp_record_params_ready_l(ffp) || ffp->record_packet_count > 1500) {
+            /* Apply the collected VPS/SPS/PPS so the muxer can build a valid
+             * hvcC/avcC instead of an empty one. */
+            if (ffp->record_video_extradata && ffp->record_video_extradata_size > 0) {
+                for (int si = 0; si < (int)ffp->record_ctx->nb_streams; si++) {
+                    AVStream *s = ffp->record_ctx->streams[si];
+                    if (s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                        av_freep(&s->codecpar->extradata);
+                        s->codecpar->extradata = (uint8_t *)av_mallocz(
+                            ffp->record_video_extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+                        if (s->codecpar->extradata) {
+                            memcpy(s->codecpar->extradata, ffp->record_video_extradata,
+                                   ffp->record_video_extradata_size);
+                            s->codecpar->extradata_size = ffp->record_video_extradata_size;
+                        }
+                    }
+                }
+            }
+            int hret = avformat_write_header(ffp->record_ctx, NULL);
+            if (hret < 0) {
+                av_log(ffp, AV_LOG_ERROR, "record: write_header failed error=%d (%s)\n",
+                       hret, av_err2str(hret));
+                avio_closep(&ffp->record_ctx->pb);
+                avformat_free_context(ffp->record_ctx);
+                ffp->record_ctx = NULL;
+                ffp->record_enabled = 0;
+                SDL_UnlockMutex(ffp->record_mutex);
+                return;
+            }
+            ffp->record_header_written = 1;
+            av_log(ffp, AV_LOG_INFO, "record: header written packets=%d\n",
+                   ffp->record_packet_count);
+        } else {
+            SDL_UnlockMutex(ffp->record_mutex);
+            return;
+        }
+    }
+
     AVPacket opkt;
     av_packet_ref(&opkt, pkt);
     av_packet_rescale_ts(&opkt, ist->time_base, ost->time_base);
@@ -5092,6 +5148,89 @@ static void ffp_record_write_packet_l(FFPlayer *ffp, AVPacket *pkt, AVFormatCont
     av_interleaved_write_frame(ffp->record_ctx, &opkt);
     av_packet_unref(&opkt);
     SDL_UnlockMutex(ffp->record_mutex);
+}
+
+static void ffp_record_collect_params_l(FFPlayer *ffp, const uint8_t *data, int size)
+{
+    if (size <= 4)
+        return;
+
+    int i = 0;
+    while (i + 4 < size) {
+        int start_len = 0;
+        if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1) {
+            start_len = 3;
+        } else if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 && data[i + 3] == 1) {
+            start_len = 4;
+        } else {
+            i++;
+            continue;
+        }
+        int nal_start = i + start_len;
+        if (nal_start >= size)
+            break;
+
+        int nal_type = -1;
+        int nal_size = 0;
+        if (ffp->record_video_codec_id == AV_CODEC_ID_HEVC) {
+            nal_type = (data[nal_start] >> 1) & 0x3F;
+        } else {
+            nal_type = data[nal_start] & 0x1F;
+        }
+
+        /* find the end of this NAL (next start code) */
+        int j = nal_start;
+        while (j + 3 < size) {
+            if ((data[j] == 0 && data[j + 1] == 0 && data[j + 2] == 1) ||
+                (data[j] == 0 && data[j + 1] == 0 && data[j + 2] == 0 && data[j + 3] == 1)) {
+                break;
+            }
+            j++;
+        }
+        nal_size = j - nal_start;
+
+        int keep = 0;
+        if (ffp->record_video_codec_id == AV_CODEC_ID_HEVC) {
+            if (nal_type == 32) keep = !ffp->record_has_vps;      /* VPS */
+            else if (nal_type == 33) keep = !ffp->record_has_sps; /* SPS */
+            else if (nal_type == 34) keep = !ffp->record_has_pps; /* PPS */
+        } else {
+            if (nal_type == 7) keep = !ffp->record_has_sps;       /* SPS */
+            else if (nal_type == 8) keep = !ffp->record_has_pps;  /* PPS */
+        }
+
+        if (keep && nal_size > 0) {
+            int need = ffp->record_video_extradata_size + 4 + nal_size;
+            uint8_t *buf = (uint8_t *)av_realloc(ffp->record_video_extradata, need);
+            if (buf) {
+                ffp->record_video_extradata = buf;
+                AV_WB32(ffp->record_video_extradata + ffp->record_video_extradata_size, 1);
+                memcpy(ffp->record_video_extradata + ffp->record_video_extradata_size + 4,
+                       data + nal_start, nal_size);
+                ffp->record_video_extradata_size = need;
+                if (ffp->record_video_codec_id == AV_CODEC_ID_HEVC) {
+                    if (nal_type == 32) ffp->record_has_vps = 1;
+                    else if (nal_type == 33) ffp->record_has_sps = 1;
+                    else if (nal_type == 34) ffp->record_has_pps = 1;
+                } else {
+                    if (nal_type == 7) ffp->record_has_sps = 1;
+                    else if (nal_type == 8) ffp->record_has_pps = 1;
+                }
+            }
+        }
+
+        if (nal_size <= 0)
+            break;
+        i = nal_start + nal_size;
+    }
+}
+
+static int ffp_record_params_ready_l(FFPlayer *ffp)
+{
+    if (ffp->record_video_codec_id == AV_CODEC_ID_HEVC) {
+        return ffp->record_has_vps && ffp->record_has_sps && ffp->record_has_pps;
+    }
+    return ffp->record_has_sps && ffp->record_has_pps;
 }
 
 int ffp_record_start_l(FFPlayer *ffp, const char *path)
@@ -5137,6 +5276,11 @@ int ffp_record_start_l(FFPlayer *ffp, const char *path)
         avcodec_parameters_copy(ost->codecpar, ist->codecpar);
         ost->codecpar->codec_tag = 0;
         ost->time_base = ist->time_base;
+        if (ist->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
+                && (ist->codecpar->codec_id == AV_CODEC_ID_H264
+                    || ist->codecpar->codec_id == AV_CODEC_ID_HEVC)) {
+            ffp->record_video_codec_id = ist->codecpar->codec_id;
+        }
         ffp->record_stream_map[i] = ost->index;
         ffp->record_mapped_streams++;
     }
@@ -5150,15 +5294,13 @@ int ffp_record_start_l(FFPlayer *ffp, const char *path)
     if (ret < 0)
         goto fail;
 
-    ret = avformat_write_header(oc, NULL);
-    if (ret < 0) {
-        avio_close(oc->pb);
-        oc->pb = NULL;
-        goto fail;
-    }
-
+    /* The mp4 header is deferred until the video parameter sets (VPS/SPS/PPS)
+     * have been collected from the stream; without them the muxer writes an
+     * empty hvcC/avcC and players cannot decode the recording. */
     ffp->record_ctx = oc;
     ffp->record_enabled = 1;
+    ffp->record_header_written = 0;
+    ffp->record_packet_count = 0;
     ffp->record_last_dts = AV_NOPTS_VALUE;
     ffp->record_last_pts = AV_NOPTS_VALUE;
     SDL_UnlockMutex(ffp->record_mutex);
@@ -5186,18 +5328,32 @@ int ffp_record_stop_l(FFPlayer *ffp)
 
     SDL_LockMutex(ffp->record_mutex);
     AVFormatContext *oc = ffp->record_ctx;
+    int header_written = ffp->record_header_written;
     ffp->record_ctx = NULL;
     ffp->record_enabled = 0;
+    ffp->record_header_written = 0;
     av_freep(&ffp->record_stream_map);
     ffp->record_mapped_streams = 0;
     ffp->record_last_dts = AV_NOPTS_VALUE;
     ffp->record_last_pts = AV_NOPTS_VALUE;
+    av_freep(&ffp->record_video_extradata);
+    ffp->record_video_extradata_size = 0;
+    ffp->record_has_vps = 0;
+    ffp->record_has_sps = 0;
+    ffp->record_has_pps = 0;
     SDL_UnlockMutex(ffp->record_mutex);
 
     if (!oc)
         return 0;
 
     if (oc->pb) {
+        if (!header_written && oc->nb_streams > 0) {
+            av_log(ffp, AV_LOG_WARNING, "record: stopping before header written\n");
+            avio_close(oc->pb);
+            oc->pb = NULL;
+            avformat_free_context(oc);
+            return -1;
+        }
         av_write_trailer(oc);
         avio_close(oc->pb);
         oc->pb = NULL;

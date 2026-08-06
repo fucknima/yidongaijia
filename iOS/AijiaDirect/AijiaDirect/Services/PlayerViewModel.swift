@@ -523,14 +523,13 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private func startRecording() {
         guard let player = player, !isRecording else { return }
         // IJK tees input packets to the file inside the demuxer thread;
-        // playback continues without interruption. The container is chosen by
-        // the file extension (.ts remuxes live H.265 streams losslessly and
-        // plays back reliably in IJK; mp4 requires valid hvcC extradata that
-        // mid-stream recordings may lack).
+        // playback continues without interruption. The C record layer collects
+        // VPS/SPS/PPS from the stream and writes the mp4 header only after the
+        // parameter sets are available, so the hvcC/avcC box is valid.
         let destination = MediaLibrary.uniqueFileURL(
             in: MediaLibrary.recordingsDirectory,
             baseName: "Live",
-            ext: "ts"
+            ext: "mp4"
         )
 
         let result = player.startRecord(withPath: destination.path)
