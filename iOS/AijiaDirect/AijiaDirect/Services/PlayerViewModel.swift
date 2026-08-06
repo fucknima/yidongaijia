@@ -1010,7 +1010,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        let player = IJKFFMoviePlayerController(contentURL: streamURL, options: nil)
+        let player = IJKFFMoviePlayerController(contentURL: streamURL, with: nil)
         player.setPlayerOptionIntValue(300, forKey: "network-caching")
         player.shouldAutoplay = true
         self.player = player
@@ -1439,10 +1439,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
         guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
               currentPlayer === player else { return }
 
-        let state = currentPlayer.playbackState.rawValue
-        if state != lastLoggedPlayerState {
-            lastLoggedPlayerState = state
-            logger.info("PLAYER", "IJK 状态变化 state=\(state)")
+        let stateText = String(currentPlayer.playbackState.rawValue)
+        if stateText != lastLoggedPlayerState {
+            lastLoggedPlayerState = stateText
+            logger.info("PLAYER", "IJK 状态变化 state=\(stateText)")
         }
 
         switch currentPlayer.playbackState {
