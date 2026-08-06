@@ -1497,9 +1497,11 @@ private struct MediaLibraryView: View {
                 MediaPreviewView(item: item)
             }
         }
-        .fullScreenCover(isPresented: $showingShareSheet) {
+        .sheet(isPresented: $showingShareSheet, onDismiss: {
+            sharingItem = nil
+        }) {
             if let url = sharingItem?.url {
-                ActivityView(activityItems: [url], isPresented: $showingShareSheet)
+                EmbeddedActivityView(activityItems: [url])
             }
         }
         .onAppear {

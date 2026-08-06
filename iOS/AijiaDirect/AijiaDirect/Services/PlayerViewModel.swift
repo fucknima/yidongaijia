@@ -1010,13 +1010,17 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: nil) else {
+        // Mirrors the official ijkplayer demo setup: default options
+        // (VideoToolbox hardware decode) plus a live-stream friendly cache.
+        let options = IJKFFOptions.byDefault()
+        options.setPlayerOptionIntValue(300, forKey: "network-caching")
+        options.setPlayerOptionIntValue(1, forKey: "infbuf")
+        guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: options) else {
             status = "播放器初始化失败"
             hasError = true
             logger.error("PLAYER", "IJK 播放器初始化失败 url=\(DiagnosticsLogger.redactedURL(streamURL))")
             return
         }
-        player.setPlayerOptionIntValue(300, forKey: "network-caching")
         player.shouldAutoplay = true
         self.player = player
         lastLoggedPlayerState = ""
@@ -1475,17 +1479,20 @@ final class PlayerViewModel: NSObject, ObservableObject {
               currentPlayer === player else { return }
 
         let reason = (notification.userInfo?[IJKMPMoviePlayerPlaybackDidFinishReasonUserInfoKey] as? NSNumber)?.intValue
+        let userInfoText = notification.userInfo?.map { "\($0.key)=\($0.value)" }.joined(separator: " ") ?? "<none>"
+        logger.info("PLAYER", "IJK 播放结束 reason=\(reason ?? -1) info=\(userInfoText)")
+
         if reason == IJKMPMovieFinishReason.playbackError.rawValue {
             isPlaying = false
             hasError = true
             status = "播放器报告错误"
-            logger.error("PLAYER", "IJK 播放错误")
+            logger.error("PLAYER", "IJK 播放错误 info=\(userInfoText)")
         }
     }
 
     private func handleLoadStateChanged(_ notification: Notification) {
         guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
               currentPlayer === player else { return }
-        logger.debug("PLAYER", "IJK 加载状态变化 loadState=\(currentPlayer.loadState.rawValue)")
+        logger.info("PLAYER", "IJK 加载状态变化 loadState=\(currentPlayer.loadState.rawValue)")
     }
 }
