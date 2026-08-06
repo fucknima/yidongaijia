@@ -15,7 +15,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     @Published var password = ""
     @Published var cameraSelector = ""
     @Published var rememberLogin = true
-    @Published private(set) var status = "请输入移动爱家账�?
+    @Published private(set) var status = "请输入移动爱家账号"
     @Published private(set) var cameraName = ""
     @Published private(set) var cameras: [AijiaCamera] = []
     @Published private(set) var selectedCameraID = ""
@@ -95,10 +95,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
             hasSavedLogin = true
             shouldShowLogin = !autoConnectEnabled
             didUserLogout = !autoConnectEnabled
-            status = autoConnectEnabled ? "已恢复保存的登录信息" : "登录信息已保存，请手动登�?
+            status = autoConnectEnabled ? "已恢复保存的登录信息" : "登录信息已保存，请手动登录"
             logger.info(
                 "AUTH",
-                "已从钥匙串恢复登录信�?account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled) cachedCameraCount=\(cameras.count)"
+                "已从钥匙串恢复登录信息 account=\(DiagnosticsLogger.maskPhone(phone)) autoConnect=\(autoConnectEnabled) cachedCameraCount=\(cameras.count)"
             )
         } else {
             logger.info("AUTH", "未找到保存的登录信息")
@@ -160,7 +160,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     func autoConnectIfSaved() {
         guard hasSavedLogin, !didAutoConnect, !didUserLogout, !password.isEmpty else { return }
         didAutoConnect = true
-        logger.info("AUTH", "启动后自动连�?)
+        logger.info("AUTH", "启动后自动连接")
         start()
     }
 
@@ -168,9 +168,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         let credentialIsMissing = password.isEmpty
         guard !trimmedPhone.isEmpty, !credentialIsMissing else {
-            status = "请填写手机号和密�?
+            status = "请填写手机号和密码"
             hasError = true
-            logger.warning("AUTH", "登录被阻止，账号或密码为�?)
+            logger.warning("AUTH", "登录被阻止，账号或密码为空")
             return
         }
 
@@ -201,7 +201,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         hasError = false
         cameraName = ""
         streamURL = nil
-        status = selectedCamera.isEmpty ? "正在登录并读取摄像头�? : "正在登录并获取实时地址�?
+        status = selectedCamera.isEmpty ? "正在登录并读取摄像头…" : "正在登录并获取实时地址…"
         shouldPresentCameraSelection = false
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
@@ -222,7 +222,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                     isLoading = false
                     isPlaying = false
                     hasError = false
-                    status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像�?
+                    status = availableCameras.isEmpty ? "账号下没有摄像头" : "请选择要播放的摄像头"
                     logger.info("PLAYER", "登录成功，已读取摄像头列表但暂未选择设备 count=\(availableCameras.count)")
                     if shouldRememberLogin {
                         if credentialStore.save(
@@ -232,7 +232,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                         ) {
                             hasSavedLogin = true
                             credentialStore.setAutoConnectEnabled(false)
-                            logger.info("AUTH", "登录信息已保存，等待用户选择摄像�?account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+                            logger.info("AUTH", "登录信息已保存，等待用户选择摄像头 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
                         } else {
                             logger.error("AUTH", "登录信息保存失败")
                         }
@@ -241,7 +241,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                     }
                     if !availableCameras.isEmpty {
                         shouldPresentCameraSelection = true
-                        logger.info("UI", "登录完成且未选择摄像头，准备自动打开选择�?count=\(availableCameras.count)")
+                        logger.info("UI", "登录完成且未选择摄像头，准备自动打开选择页 count=\(availableCameras.count)")
                     }
                     return
                 }
@@ -268,7 +268,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                     ) {
                         hasSavedLogin = true
                         credentialStore.setAutoConnectEnabled(true)
-                        logger.info("AUTH", "登录信息已保存到钥匙�?account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+                        logger.info("AUTH", "登录信息已保存到钥匙串 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
                     } else {
                         logger.error("AUTH", "登录信息保存失败")
                     }
@@ -314,7 +314,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     func consumeCameraSelectionPrompt() {
         guard shouldPresentCameraSelection else { return }
         shouldPresentCameraSelection = false
-        logger.info("UI", "已消费自动打开摄像头选择页请�?)
+        logger.info("UI", "已消费自动打开摄像头选择页请求")
     }
 
     private func cameraToPlay(from availableCameras: [AijiaCamera], selector: String) -> AijiaCamera? {
@@ -352,7 +352,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         selectedCameraID = ""
         isLoadingRecordings = false
         shouldPresentCameraSelection = false
-        status = "已停�?
+        status = "已停止"
         hasError = false
         if !hasSavedLogin {
             shouldShowLogin = true
@@ -360,7 +360,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     func logout() {
-        logger.info("AUTH", "用户退出登�?)
+        logger.info("AUTH", "用户退出登录")
         stop()
         // Keep the existing fields and saved credentials so returning to the login
         // screen does not force the user to type the account again.
@@ -387,14 +387,14 @@ final class PlayerViewModel: NSObject, ObservableObject {
     func clearDiagnostics() {
         logger.info("DIAGNOSTICS", "用户清除诊断日志")
         logger.clear()
-        status = "诊断日志已清�?
+        status = "诊断日志已清除"
         hasError = false
     }
 
     func setHistoryVisible(_ visible: Bool) {
         guard isHistoryVisible != visible else { return }
         isHistoryVisible = visible
-        logger.info("UI", visible ? "进入回放�? : "离开回放�?)
+        logger.info("UI", visible ? "进入回放页" : "离开回放页")
     }
 
     func handleAppEnteredBackground() {
@@ -412,14 +412,14 @@ final class PlayerViewModel: NSObject, ObservableObject {
             player?.pause()
             isPlaying = false
             replayBackgroundedAt = Date()
-            status = "应用已进入后台，历史回放已暂�?
+            status = "应用已进入后台，历史回放已暂停"
         } else {
             replayBackgroundedAt = nil
             status = "应用已进入后台，回前台会刷新实时画面"
         }
         logger.info(
             "PLAYER",
-            isReplay ? "应用进入后台，暂停历史回放并保留进度" : "应用进入后台，实时播放将在回前台时刷�?
+            isReplay ? "应用进入后台，暂停历史回放并保留进度" : "应用进入后台，实时播放将在回前台时刷新"
         )
     }
 
@@ -429,7 +429,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
         guard shouldPlay, isAuthenticated else { return }
         if isReplay {
-            logger.info("REPLAY", "应用回到前台，保留历史回放进�?)
+            logger.info("REPLAY", "应用回到前台，保留历史回放进度")
             status = "已回到前台，继续历史回放"
             shouldPlay = true
             resumeReplayAfterForeground()
@@ -437,14 +437,14 @@ final class PlayerViewModel: NSObject, ObservableObject {
         }
 
         if isHistoryVisible {
-            status = "已回到前台，停留在回放页不自动播放直�?
+            status = "已回到前台，停留在回放页不自动播放直播"
             logger.info("PLAYER", "回放页可见且未播放回放，跳过前台直播刷新")
             return
         }
 
         guard streamURL != nil else {
-            status = "已回到前台，未启动实时画�?
-            logger.info("PLAYER", "回到前台时没有实时流，跳过自动播�?)
+            status = "已回到前台，未启动实时画面"
+            logger.info("PLAYER", "回到前台时没有实时流，跳过自动播放")
             return
         }
 
@@ -453,13 +453,13 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func controlPTZ(_ direction: AijiaPTZDirection) {
         guard let client = api, isAuthenticated, !isReplay else {
-            status = isReplay ? "历史回放时不能控制云�? : "请先连接摄像�?
+            status = isReplay ? "历史回放时不能控制云台" : "请先连接摄像头"
             hasError = true
             return
         }
 
         logger.info("PTZ", "用户请求云台控制 direction=\(direction.rawValue)")
-        status = "正在控制云台\(direction.title)�?
+        status = "正在控制云台\(direction.title)…"
         hasError = false
         Task(priority: .userInitiated) { [weak self, client] in
             do {
@@ -481,7 +481,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func captureSnapshot() {
         guard let player = player, player.isPlaying, !isReplay, !isRecording else {
-            status = isReplay ? "历史回放时不能截�? : "当前没有可截图的直播画面"
+            status = isReplay ? "历史回放时不能截图" : "当前没有可截图的直播画面"
             hasError = true
             return
         }
@@ -507,15 +507,15 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        status = "截图已保存到媒体�?
+        status = "截图已保存到媒体库"
         hasError = false
-        logger.info("MEDIA", "截图已保�?file=\(destination.lastPathComponent)")
+        logger.info("MEDIA", "截图已保存 file=\(destination.lastPathComponent)")
         MediaLibrary.shared.reload()
     }
 
     func toggleRecording() {
         guard streamURL != nil, !isReplay else {
-            status = isReplay ? "历史回放时不能录�? : "请先连接摄像�?
+            status = isReplay ? "历史回放时不能录像" : "请先连接摄像头"
             hasError = true
             return
         }
@@ -539,7 +539,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         // playback continues without interruption.
         let result = player.startRecord(withPath: destination.path)
         guard result == 0 else {
-            status = "录像启动失败（错误码 \(result)�?
+            status = "录像启动失败（错误码 \(result)）"
             hasError = true
             logger.warning("MEDIA", "录像启动失败 result=\(result)")
             return
@@ -547,9 +547,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
         recordingFileURL = destination
         isRecording = true
-        status = "正在录制直播画面�?
+        status = "正在录制直播画面…"
         hasError = false
-        logger.info("MEDIA", "开始录�?file=\(destination.lastPathComponent)")
+        logger.info("MEDIA", "开始录像 file=\(destination.lastPathComponent)")
 
         // Verify that the file is actually being written shortly after start.
         Task { @MainActor [weak self] in
@@ -567,7 +567,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.hasError = true
                 return
             }
-            self.logger.debug("MEDIA", "录像文件已确认写�?file=\(destination.lastPathComponent)")
+            self.logger.debug("MEDIA", "录像文件已确认写入 file=\(destination.lastPathComponent)")
         }
     }
 
@@ -581,8 +581,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
         MediaLibrary.shared.reload()
         if result == 0, let fileURL = fileURL, Self.fileExistsAndHasData(fileURL) {
-            status = "录像已保存到媒体�?
-            logger.info("MEDIA", "录像已保�?file=\(fileURL.lastPathComponent)")
+            status = "录像已保存到媒体库"
+            logger.info("MEDIA", "录像已保存 file=\(fileURL.lastPathComponent)")
         } else {
             if let fileURL = fileURL {
                 try? FileManager.default.removeItem(at: fileURL)
@@ -609,7 +609,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         _ = player?.stopRecord()
         if let fileURL = recordingFileURL {
             try? FileManager.default.removeItem(at: fileURL)
-            logger.warning("MEDIA", "录像中断，已删除未完成文�?file=\(fileURL.lastPathComponent)")
+            logger.warning("MEDIA", "录像中断，已删除未完成文件 file=\(fileURL.lastPathComponent)")
         }
         recordingFileURL = nil
         MediaLibrary.shared.reload()
@@ -617,7 +617,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func loadRecordings(for date: Date, force: Bool = false) {
         guard let client = api, isAuthenticated else {
-            status = "请先连接摄像�?
+            status = "请先连接摄像头"
             hasError = true
             return
         }
@@ -638,7 +638,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
             }
 
             if isLoadingRecordings, recordingsQueryKey == queryKey {
-                logger.debug("REPLAY", "忽略重复的历史录像查询（请求仍在进行�?)
+                logger.debug("REPLAY", "忽略重复的历史录像查询（请求仍在进行）")
                 return
             }
 
@@ -660,7 +660,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         isLoadingRecordings = true
         hasError = false
         recordings = []
-        status = "正在读取内存卡录像�?
+        status = "正在读取内存卡录像…"
         logger.info(
             "REPLAY",
             "用户查询历史录像 date=\(ISO8601DateFormatter().string(from: start))"
@@ -680,7 +680,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.recordingsTask = nil
                 self.isLoadingRecordings = false
                 self.hasError = false
-                self.status = items.isEmpty ? "这一天没有找到内存卡录像" : "找到 \(items.count) 段录�?
+                self.status = items.isEmpty ? "这一天没有找到内存卡录像" : "找到 \(items.count) 段录像"
             } catch {
                 guard let self = self,
                       self.api === client,
@@ -698,7 +698,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func playRecording(_ recording: AijiaRecording) {
         guard let client = api, isAuthenticated else {
-            status = "请先连接摄像�?
+            status = "请先连接摄像头"
             hasError = true
             return
         }
@@ -716,7 +716,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         shouldPlay = true
         replayRecording = recording
         let playbackStartTime = recording.playbackStartTime
-        status = "正在打开历史录像�?
+        status = "正在打开历史录像…"
         logger.info(
             "REPLAY",
             "用户打开历史录像 start=\(recording.startTime) end=\(recording.endTime)"
@@ -731,7 +731,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                     try await client.stopReplay()
                     try Task.checkCancellation()
                 } catch is CancellationError {
-                    self?.logger.debug("REPLAY", "切换历史录像前的停止请求已取�?)
+                    self?.logger.debug("REPLAY", "切换历史录像前的停止请求已取消")
                     return
                 } catch {
                     self?.logger.warning("REPLAY", "切换历史录像前停止旧回放失败 error=\(error.localizedDescription)")
@@ -760,12 +760,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "正在播放内存卡录�?
+                self.status = "正在播放内存卡录像"
                 self.logger.info("REPLAY", "历史录像打开成功 playbackStart=\(playbackStartTime)")
                 self.preparePlayerIfPossible()
                 self.scheduleKeepAlive()
             } catch is CancellationError {
-                self?.logger.debug("REPLAY", "打开历史录像请求已取�?)
+                self?.logger.debug("REPLAY", "打开历史录像请求已取消")
             } catch {
                 guard let self = self,
                       self.isCurrentPlaybackOperation(operationID),
@@ -797,12 +797,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
         resetReplayPlaybackState()
 
         guard shouldPlay, isAuthenticated, let client = client else {
-            status = "历史录像已停�?
+            status = "历史录像已停止"
             return
         }
 
         isLoading = true
-        status = "正在恢复实时画面�?
+        status = "正在恢复实时画面…"
         logger.info("PLAYER", "历史回放结束，立即恢复实时流")
 
         let task = Task(priority: .userInitiated) { [weak self, client] in
@@ -827,7 +827,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "已回到实时流，正在本机播�?
+                self.status = "已回到实时流，正在本机播放"
                 self.logger.info("PLAYER", "历史回放后实时流恢复成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
                 self.preparePlayerIfPossible()
                 self.scheduleKeepAlive()
@@ -848,7 +848,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func seekReplay(to position: Double) {
         guard isReplay, let client = api, isAuthenticated, let recording = replayRecording else {
-            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会�?)
+            logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会话")
             return
         }
 
@@ -866,7 +866,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         player?.pause()
-        status = "正在跳转历史录像�?
+        status = "正在跳转历史录像…"
         logger.info(
             "REPLAY",
             "用户拖动回放进度 position=\(String(format: "%.4f", clampedPosition)) timestamp=\(timestamp)"
@@ -890,10 +890,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.isLoading = false
                 self.isPlaying = true
                 self.hasError = false
-                self.status = "正在播放内存卡录�?
+                self.status = "正在播放内存卡录像"
                 self.logger.info("REPLAY", "历史录像跳转成功 timestamp=\(timestamp)")
             } catch is CancellationError {
-                self?.logger.debug("REPLAY", "历史录像跳转请求已取�?)
+                self?.logger.debug("REPLAY", "历史录像跳转请求已取消")
             } catch {
                 guard let self = self,
                       self.api === client,
@@ -921,7 +921,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         guard isReplay, let streamURL = streamURL else { return }
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
-        logger.debug("REPLAY", "服务器回放定位成功，重启播放器恢复播�?)
+        logger.debug("REPLAY", "服务器回放定位成功，重启播放器恢复播放")
         tearDownPlayer()
         preparePlayerIfPossible()
         scheduleReplayProgressTimer()
@@ -973,7 +973,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         guard let hostView = fullscreenSurfaceHost ?? inlineSurfaceHost else {
             if activeSurfaceHost != nil {
                 activeSurfaceHost = nil
-                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运�?)
+                logger.debug("PLAYER", "播放器输出面已从宿主移除，播放会话保持运行")
             }
             return
         }
@@ -982,7 +982,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         activeSurfaceHost = hostView
         if hostChanged {
             attachPlayerView(to: hostView)
-            logger.debug("PLAYER", "播放器输出面已挂载到新宿�?)
+            logger.debug("PLAYER", "播放器输出面已挂载到新宿主")
         }
 
         layoutPlayerSurface(in: hostView)
@@ -1072,7 +1072,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         lastNetworkReceivedBytes = currentNetworkReceivedBytes()
         lastNetworkSpeedSampleDate = Date()
         networkSpeedText = "测速中"
-        logger.debug("PLAYER", "已启�?1 秒实时网速采样定时器")
+        logger.debug("PLAYER", "已启动 1 秒实时网速采样定时器")
         networkSpeedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateNetworkSpeedText()
@@ -1094,7 +1094,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
               let previousDate = lastNetworkSpeedSampleDate else {
             lastNetworkReceivedBytes = receivedBytes
             lastNetworkSpeedSampleDate = now
-            logger.debug("PLAYER", "实时网速采样基线已初始�?bytes=\(receivedBytes)")
+            logger.debug("PLAYER", "实时网速采样基线已初始化 bytes=\(receivedBytes)")
             return
         }
 
@@ -1109,7 +1109,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         lastNetworkSpeedSampleDate = now
         if networkSpeedText != speedText {
             networkSpeedText = speedText
-            logger.debug("PLAYER", "实时拉流网�?speed=\(speedText)")
+            logger.debug("PLAYER", "实时拉流网速 speed=\(speedText)")
         }
     }
 
@@ -1140,14 +1140,14 @@ final class PlayerViewModel: NSObject, ObservableObject {
         }
         return totalBytes
         #else
-        logger.warning("PLAYER", "当前平台不支持实时网速采�?)
+        logger.warning("PLAYER", "当前平台不支持实时网速采样")
         return nil
         #endif
     }
 
     private func scheduleKeepAlive() {
         keepAliveTimer?.invalidate()
-        logger.debug("PLAYER", "已启�?20 秒保活定时器")
+        logger.debug("PLAYER", "已启动 20 秒保活定时器")
         keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.runKeepAlive()
@@ -1182,8 +1182,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private func reconnect(client: AijiaAPIClient) async {
         guard !reconnectInFlight else { return }
         reconnectInFlight = true
-        logger.warning("PLAYER", "保活失败，开始重�?)
-        status = "保活失败，正在重新连接�?
+        logger.warning("PLAYER", "保活失败，开始重连")
+        status = "保活失败，正在重新连接…"
         hasError = false
 
         do {
@@ -1224,7 +1224,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         isPlaying = false
         isLoading = true
         hasError = false
-        status = "正在刷新实时画面�?
+        status = "正在刷新实时画面…"
 
         let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
             defer {
@@ -1309,7 +1309,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         let operationID = playbackOperationID
         let resumeTimestamp = currentReplayAbsoluteSecond()
         logger.info("REPLAY", "回放切后台超过阈值，重新建立回放会话 timestamp=\(resumeTimestamp)")
-        status = "正在恢复历史回放�?
+        status = "正在恢复历史回放…"
         isLoading = true
         isPlaying = false
         hasError = false
@@ -1341,11 +1341,11 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self.isLoading = false
                 self.isPlaying = self.player != nil
                 self.hasError = false
-                self.status = "正在播放内存卡录�?
+                self.status = "正在播放内存卡录像"
                 self.logger.info("REPLAY", "重新建立历史回放会话成功 url=\(DiagnosticsLogger.redactedURL(url))")
                 self.scheduleKeepAlive()
             } catch is CancellationError {
-                self.logger.debug("REPLAY", "恢复历史回放请求已取�?)
+                self.logger.debug("REPLAY", "恢复历史回放请求已取消")
             } catch {
                 guard self.isCurrentPlaybackOperation(operationID),
                       self.isReplay else { return }
@@ -1386,7 +1386,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         if player != nil {
-            logger.debug("PLAYER", "释放播放器实�?)
+            logger.debug("PLAYER", "释放播放器实例")
         }
         tearDownPlayer()
     }
@@ -1449,7 +1449,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         let state = currentPlayer.playbackState.rawValue
         if state != lastLoggedPlayerState {
             lastLoggedPlayerState = state
-            logger.info("PLAYER", "IJK 状态变�?state=\(state)")
+            logger.info("PLAYER", "IJK 状态变化 state=\(state)")
         }
 
         switch currentPlayer.playbackState {
@@ -1459,14 +1459,14 @@ final class PlayerViewModel: NSObject, ObservableObject {
             if isReplay {
                 scheduleReplayProgressTimer()
             }
-            logger.info("PLAYER", "IJK 已开始输出视�?)
+            logger.info("PLAYER", "IJK 已开始输出视频")
         case .paused:
-            logger.info("PLAYER", "IJK 已暂�?)
+            logger.info("PLAYER", "IJK 已暂停")
         case .stopped:
             if shouldPlay {
                 isPlaying = false
             }
-            logger.info("PLAYER", "IJK 已停�?)
+            logger.info("PLAYER", "IJK 已停止")
         default:
             break
         }
@@ -1480,7 +1480,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if reason == IJKMPMovieFinishReason.playbackError.rawValue {
             isPlaying = false
             hasError = true
-            status = "播放器报告错�?
+            status = "播放器报告错误"
             logger.error("PLAYER", "IJK 播放错误")
         }
     }
@@ -1488,6 +1488,6 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private func handleLoadStateChanged(_ notification: Notification) {
         guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
               currentPlayer === player else { return }
-        logger.debug("PLAYER", "IJK 加载状态变�?loadState=\(currentPlayer.loadState.rawValue)")
+        logger.debug("PLAYER", "IJK 加载状态变化 loadState=\(currentPlayer.loadState.rawValue)")
     }
 }

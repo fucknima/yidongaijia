@@ -43,7 +43,7 @@ struct ContentView: View {
 
     private func presentCameraSelectionIfNeeded() {
         guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
-        DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择�?)
+        DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择页")
         model.consumeCameraSelectionPrompt()
         showingCameraSelection = true
     }
@@ -98,7 +98,7 @@ private final class ThemeStore: ObservableObject {
     @Published var accent: AppAccent {
         didSet {
             UserDefaults.standard.set(accent.rawValue, forKey: Self.accentKey)
-            DiagnosticsLogger.shared.info("UI", "用户切换主题�?accent=\(accent.rawValue)")
+            DiagnosticsLogger.shared.info("UI", "用户切换主题色 accent=\(accent.rawValue)")
         }
     }
 
@@ -195,7 +195,7 @@ private struct LoginView: View {
                         VStack(spacing: 5) {
                             Text("爱家直连")
                                 .font(.title.weight(.bold))
-                            Text("登录移动爱家账号，摄像头画面在本机解�?)
+                            Text("登录移动爱家账号，摄像头画面在本机解码")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -204,7 +204,7 @@ private struct LoginView: View {
 
                     AppTheme.card {
                         VStack(spacing: 14) {
-                            TextField("移动手机�?, text: $model.phone)
+                            TextField("移动手机号", text: $model.phone)
                                 .textContentType(.telephoneNumber)
                                 .keyboardType(.phonePad)
                                 .focused($focusedField, equals: .phone)
@@ -236,7 +236,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录�? : "登录并播�?)
+                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
                                         .font(.headline)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -256,7 +256,7 @@ private struct LoginView: View {
                         StatusText(model: model)
                     }
 
-                    Text("密码只保存在本机钥匙串，不会上传到其他服务器�?)
+                    Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -316,9 +316,9 @@ private struct CameraSelectionPage: View {
                         Image(systemName: "video.slash")
                             .font(.title2)
                             .foregroundStyle(.secondary)
-                        Text("暂无摄像�?)
+                        Text("暂无摄像头")
                             .font(.headline)
-                        Text("请先登录并读取账号下的摄像头�?)
+                        Text("请先登录并读取账号下的摄像头。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -358,12 +358,12 @@ private struct CameraSelectionPage: View {
                     }
                 }
             } header: {
-                Text("请选择要播放的摄像�?)
+                Text("请选择要播放的摄像头")
             }
         }
         .listStyle(.insetGrouped)
         .tint(theme.accent.color)
-        .navigationTitle("选择摄像�?)
+        .navigationTitle("选择摄像头")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -374,7 +374,7 @@ private struct CameraSelectionPage: View {
             }
         }
         .onAppear {
-            DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择�?count=\(model.cameras.count)")
+            DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择页 count=\(model.cameras.count)")
         }
     }
 }
@@ -385,10 +385,10 @@ private struct CameraSelectionMenuButton: View {
 
     var body: some View {
         Button {
-            DiagnosticsLogger.shared.info("UI", "用户从更多操作打开独立摄像头选择�?)
+            DiagnosticsLogger.shared.info("UI", "用户从更多操作打开独立摄像头选择页")
             isPresented = true
         } label: {
-            Label("选择摄像�?, systemImage: "video.badge.plus")
+            Label("选择摄像头", systemImage: "video.badge.plus")
         }
     }
 }
@@ -411,7 +411,7 @@ private struct AboutView: View {
                 .padding(.vertical, 16)
             }
 
-            Section("主题�?) {
+            Section("主题色") {
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
                     spacing: 12
@@ -446,12 +446,12 @@ private struct AboutView: View {
             }
 
             Section("项目介绍") {
-                Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并�?iPhone 本机解码播放实时与内存卡回放视频�?)
+                Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并在 iPhone 本机解码播放实时与内存卡回放视频。")
             }
 
-            Section("作�?) {
+            Section("作者") {
                 HStack {
-                    Text("作�?)
+                    Text("作者")
                     Spacer()
                     Text("fucknima")
                         .foregroundStyle(.secondary)
@@ -468,15 +468,15 @@ private struct AboutView: View {
                 Link("github.com/fucknima/yidongaijia", destination: URL(string: "https://github.com/fucknima/yidongaijia")!)
             }
 
-            Section("开源许�?) {
-                Text("本项目基�?MIT License 开源，允许自由使用、修改与分发�?)
+            Section("开源许可") {
+                Text("本项目基于 MIT License 开源，允许自由使用、修改与分发。")
                 Text("Copyright © 2026 fucknima")
                     .foregroundStyle(.secondary)
                 Link("查看完整许可协议", destination: URL(string: "https://github.com/fucknima/yidongaijia/blob/main/LICENSE")!)
             }
 
             Section("免责声明") {
-                Text("本项目是移动爱家的第三方 iOS 客户端，不是中国移动、移动爱家或其关联公司的官方应用、SDK，也不代表上述任何一方。请只在你有权使用的账号和摄像头上运行。云端接口、签名规则和服务策略可能变化；本项目不提供或绕过官方授权，也不保证接口长期稳定�?)
+                Text("本项目是移动爱家的第三方 iOS 客户端，不是中国移动、移动爱家或其关联公司的官方应用、SDK，也不代表上述任何一方。请只在你有权使用的账号和摄像头上运行。云端接口、签名规则和服务策略可能变化；本项目不提供或绕过官方授权，也不保证接口长期稳定。")
             }
         }
         .listStyle(.insetGrouped)
@@ -503,9 +503,9 @@ private struct PlayerScreen: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.cameraName.isEmpty ? "我的摄像�? : model.cameraName)
+                            Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
                                 .font(.title3.weight(.semibold))
-                            Text(model.isLoading ? "正在连接云端�? : "移动爱家摄像�?)
+                            Text(model.isLoading ? "正在连接云端…" : "移动爱家摄像头")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -537,7 +537,7 @@ private struct PlayerScreen: View {
                             }
                             MediaActionButton(
                                 icon: "photo.on.rectangle.angled",
-                                title: "媒体�?,
+                                title: "媒体库",
                                 tint: AppTheme.accent
                             ) {
                                 showingMediaLibrary = true
@@ -590,7 +590,7 @@ private struct PlayerScreen: View {
                                     .font(.title3)
                                     .foregroundStyle(AppTheme.accent)
                                     .frame(width: 30)
-                                Text("内存卡回�?)
+                                Text("内存卡回放")
                                     .font(.body.weight(.medium))
                                 Spacer()
                                 Image(systemName: "chevron.right")
@@ -713,9 +713,9 @@ private struct StatusPill: View {
 
     private var label: String {
         if model.hasError { return "错误" }
-        if model.isLoading { return "连接�? }
-        if model.isPlaying { return "直播�? }
-        return "已停�?
+        if model.isLoading { return "连接中" }
+        if model.isPlaying { return "直播中" }
+        return "已停止"
     }
 
     var body: some View {
@@ -824,7 +824,7 @@ private struct FullscreenPlayerView: View {
             .buttonStyle(.plain)
             .frame(width: 72, height: 72)
             .contentShape(Rectangle())
-            .accessibilityLabel("退出全�?)
+            .accessibilityLabel("退出全屏")
             .padding(4)
         }
         .statusBar(hidden: true)
@@ -1120,7 +1120,7 @@ private struct HistoryView: View {
                                 if model.isLoadingRecordings {
                                     ProgressView()
                                 }
-                                Text(model.isLoadingRecordings ? "正在查询�? : "查询历史录像")
+                                Text(model.isLoadingRecordings ? "正在查询…" : "查询历史录像")
                                     .font(.headline)
                             }
                             .frame(maxWidth: .infinity)
@@ -1151,7 +1151,7 @@ private struct HistoryView: View {
                 }
 
                 if model.isLoadingRecordings {
-                    ProgressView("正在读取内存卡录像�?)
+                    ProgressView("正在读取内存卡录像…")
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else if model.recordings.isEmpty {
                     VStack(spacing: 10) {
@@ -1166,7 +1166,7 @@ private struct HistoryView: View {
                     .padding(.vertical, 32)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("录像片段（\(model.recordings.count)�?)
+                        Text("录像片段（\(model.recordings.count)）")
                             .font(.headline)
 
                         ForEach(model.recordings) { recording in
@@ -1180,7 +1180,7 @@ private struct HistoryView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
-                                        Text("点击播放此片�?)
+                                        Text("点击播放此片段")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }
@@ -1205,7 +1205,7 @@ private struct HistoryView: View {
             .padding()
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("内存卡回�?)
+        .navigationTitle("内存卡回放")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -1254,7 +1254,7 @@ private struct HistoryView: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "HH:mm:ss"
-        return "\(formatter.string(from: recording.startDate)) �?\(formatter.string(from: recording.endDate))"
+        return "\(formatter.string(from: recording.startDate)) – \(formatter.string(from: recording.endDate))"
     }
 }
 
@@ -1276,7 +1276,7 @@ private struct DiagnosticsView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(AppTheme.accent)
                     Spacer()
-                    Text("\(logger.visibleLines.count) �?)
+                    Text("\(logger.visibleLines.count) 行")
                         .font(.footnote.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
@@ -1350,9 +1350,9 @@ private struct DiagnosticsView: View {
                         Toggle(level.title, isOn: levelBinding(level))
                     }
                 } label: {
-                    Label("筛�?, systemImage: "line.3.horizontal.decrease.circle")
+                    Label("筛选", systemImage: "line.3.horizontal.decrease.circle")
                 }
-                .accessibilityLabel("日志等级筛�?)
+                .accessibilityLabel("日志等级筛选")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -1401,7 +1401,7 @@ private struct DiagnosticsView: View {
         let enabled = DiagnosticsLogger.Level.allCases
             .filter { logger.visibleLevels.contains($0) }
             .map(\.title)
-        return enabled.isEmpty ? "已隐藏全部等�? : "已筛选：\(enabled.joined(separator: "�?))"
+        return enabled.isEmpty ? "已隐藏全部等级" : "已筛选：\(enabled.joined(separator: "、"))"
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -1432,9 +1432,9 @@ private struct MediaLibraryView: View {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 42))
                         .foregroundStyle(.secondary)
-                    Text("暂无截图或录�?)
+                    Text("暂无截图或录像")
                         .font(.headline)
-                    Text("在直播画面点击截图或录像，内容会保存在这里�?)
+                    Text("在直播画面点击截图或录像，内容会保存在这里。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1483,7 +1483,7 @@ private struct MediaLibraryView: View {
             }
         }
         .tint(theme.accent.color)
-        .navigationTitle("媒体�?)
+        .navigationTitle("媒体库")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
