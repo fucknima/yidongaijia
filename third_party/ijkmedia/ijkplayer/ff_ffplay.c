@@ -5174,7 +5174,8 @@ fail:
     av_freep(&ffp->record_stream_map);
     ffp->record_mapped_streams = 0;
     SDL_UnlockMutex(ffp->record_mutex);
-    av_log(ffp, AV_LOG_ERROR, "record: start failed path=%s\n", path);
+    av_log(ffp, AV_LOG_ERROR, "record: start failed path=%s error=%d (%s)\n",
+           path, ret, av_err2str(ret));
     return ret;
 }
 

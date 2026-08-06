@@ -1704,7 +1704,22 @@ private struct EmbeddedActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        // Pre-generate the preview so the first share is not blank and the
+        // panel shows the shared image instead of an empty placeholder.
+        if let image = activityItems.first as? UIImage {
+            let previewController = UIViewController()
+            let imageView = UIImageView(image: image)
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = CGRect(x: 0, y: 0, width: 320, height: 320)
+            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            previewController.view.addSubview(imageView)
+            controller.setValue(previewController, forKey: "previewViewController")
+        }
+        return controller
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
