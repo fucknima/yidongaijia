@@ -1,28 +1,28 @@
-import MobileVLCKit
+import IJKMediaFramework
 import SwiftUI
 import UIKit
 
-enum VLCPlayerSurfaceRole {
+enum IJKPlayerSurfaceRole {
     case inline
     case fullscreen
 }
 
-struct VLCPlayerView: UIViewRepresentable {
+struct IJKPlayerView: UIViewRepresentable {
     // PlayerScreen/HistoryView already observe the model. Observing it here
     // would cause every replay progress tick to rebuild the representable.
     let model: PlayerViewModel
-    let role: VLCPlayerSurfaceRole
+    let role: IJKPlayerSurfaceRole
 
-    init(model: PlayerViewModel, role: VLCPlayerSurfaceRole = .inline) {
+    init(model: PlayerViewModel, role: IJKPlayerSurfaceRole = .inline) {
         self.model = model
         self.role = role
     }
 
     final class Coordinator {
         weak var model: PlayerViewModel?
-        let role: VLCPlayerSurfaceRole
+        let role: IJKPlayerSurfaceRole
 
-        init(model: PlayerViewModel, role: VLCPlayerSurfaceRole) {
+        init(model: PlayerViewModel, role: IJKPlayerSurfaceRole) {
             self.model = model
             self.role = role
         }
@@ -33,7 +33,7 @@ struct VLCPlayerView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UIView {
-        let hostView = VLCPlayerHostView()
+        let hostView = IJKPlayerHostView()
         hostView.backgroundColor = .black
         hostView.model = model
         model.mountPlayerSurface(in: hostView, role: role)
@@ -41,19 +41,19 @@ struct VLCPlayerView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        guard let hostView = uiView as? VLCPlayerHostView else { return }
+        guard let hostView = uiView as? IJKPlayerHostView else { return }
         hostView.model = model
         model.mountPlayerSurface(in: hostView, role: role)
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        guard let hostView = uiView as? VLCPlayerHostView else { return }
+        guard let hostView = uiView as? IJKPlayerHostView else { return }
         coordinator.model?.unmountPlayerSurface(from: hostView, role: coordinator.role)
         hostView.model = nil
     }
 }
 
-private final class VLCPlayerHostView: UIView {
+private final class IJKPlayerHostView: UIView {
     weak var model: PlayerViewModel?
 
     override func layoutSubviews() {

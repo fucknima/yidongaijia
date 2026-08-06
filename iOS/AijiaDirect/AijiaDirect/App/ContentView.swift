@@ -1,9 +1,12 @@
+import IJKMediaFramework
 import SwiftUI
 import UIKit
 
 struct ContentView: View {
     @ObservedObject var model: PlayerViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var theme = ThemeStore.shared
+    @State private var showingCameraSelection = false
 
     var body: some View {
         Group {
@@ -13,8 +16,10 @@ struct ContentView: View {
                 PlayerScreen(model: model)
             }
         }
+        .tint(theme.accent.color)
         .onAppear {
             model.autoConnectIfSaved()
+            presentCameraSelectionIfNeeded()
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
@@ -26,49 +31,201 @@ struct ContentView: View {
                 break
             }
         }
+        .onChange(of: model.shouldPresentCameraSelection) { _ in
+            presentCameraSelectionIfNeeded()
+        }
+        .sheet(isPresented: $showingCameraSelection) {
+            NavigationView {
+                CameraSelectionPage(model: model)
+            }
+        }
+    }
+
+    private func presentCameraSelectionIfNeeded() {
+        guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
+        DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择页")
+        model.consumeCameraSelectionPrompt()
+        showingCameraSelection = true
+    }
+}
+
+// MARK: - Theme
+
+private enum AppAccent: String, CaseIterable, Identifiable {
+    case teal
+    case blue
+    case indigo
+    case purple
+    case pink
+    case orange
+    case green
+    case red
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .teal: return "青绿"
+        case .blue: return "蓝色"
+        case .indigo: return "靛蓝"
+        case .purple: return "紫色"
+        case .pink: return "粉色"
+        case .orange: return "橙色"
+        case .green: return "绿色"
+        case .red: return "红色"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .teal: return Color(red: 0.11, green: 0.60, blue: 0.53)
+        case .blue: return .blue
+        case .indigo: return .indigo
+        case .purple: return .purple
+        case .pink: return .pink
+        case .orange: return .orange
+        case .green: return .green
+        case .red: return .red
+        }
+    }
+}
+
+private final class ThemeStore: ObservableObject {
+    static let shared = ThemeStore()
+
+    private static let accentKey = "appearance.accent"
+
+    @Published var accent: AppAccent {
+        didSet {
+            UserDefaults.standard.set(accent.rawValue, forKey: Self.accentKey)
+            DiagnosticsLogger.shared.info("UI", "用户切换主题色 accent=\(accent.rawValue)")
+        }
+    }
+
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Self.accentKey)
+        accent = AppAccent(rawValue: saved ?? "") ?? .teal
+    }
+}
+
+private enum AppTheme {
+    static var accent: Color {
+        ThemeStore.shared.accent.color
+    }
+
+    static let cardRadius: CGFloat = 16
+
+    static var cardBackground: Color {
+        Color(.secondarySystemGroupedBackground)
+    }
+
+    static func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
+                    .fill(cardBackground)
+            )
+    }
+}
+
+private struct AppMark: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if let icon = appIcon {
+                Image(uiImage: icon)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 60, height: 60)
+                    .background(AppTheme.accent)
+            }
+        }
+        .frame(width: 60, height: 60)
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
+        )
+    }
+
+    private var appIcon: UIImage? {
+        // Use the matching light/dark artwork explicitly; the asset catalog
+        // icon variants are not reliably resolved by UIImage(named:).
+        UIImage(named: colorScheme == .dark ? "AppIcon-Dark" : "AppIcon-Light")
     }
 }
 
 private struct LoginView: View {
     @ObservedObject var model: PlayerViewModel
     @FocusState private var focusedField: Field?
+    @State private var showingAbout = false
+    @State private var showingDiagnostics = false
+
+    private var passwordBinding: Binding<String> {
+        Binding(
+            get: { model.password },
+            set: { newValue in
+                if newValue.isEmpty, !model.password.isEmpty {
+                    model.password.removeLast()
+                } else {
+                    model.password = newValue
+                }
+            }
+        )
+    }
 
     private enum Field: Hashable {
         case phone
         case password
-        case camera
     }
 
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("爱家直连")
-                            .font(.largeTitle.weight(.bold))
-                        Text("登录后直接查看摄像头，视频在本机解码。")
-                            .foregroundStyle(.secondary)
+                VStack(spacing: 24) {
+                    VStack(spacing: 14) {
+                        AppMark()
+                        VStack(spacing: 5) {
+                            Text("爱家直连")
+                                .font(.title.weight(.bold))
+                            Text("登录移动爱家账号，摄像头画面在本机解码")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.top, 44)
 
-                    GroupBox {
+                    AppTheme.card {
                         VStack(spacing: 14) {
                             TextField("移动手机号", text: $model.phone)
                                 .textContentType(.telephoneNumber)
                                 .keyboardType(.phonePad)
-                                .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .phone)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color(.secondarySystemBackground))
+                                )
 
-                            SecureField("移动爱家密码", text: $model.password)
+                            SecureField("移动爱家密码", text: passwordBinding)
                                 .textContentType(.password)
-                                .textFieldStyle(.roundedBorder)
                                 .focused($focusedField, equals: .password)
-
-                            TextField("mac_id 或摄像头名称（可选）", text: $model.cameraSelector)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($focusedField, equals: .camera)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color(.secondarySystemBackground))
+                                )
 
                             Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
+                                .padding(.horizontal, 2)
 
                             Button {
                                 focusedField = nil
@@ -80,10 +237,13 @@ private struct LoginView: View {
                                             .tint(.white)
                                     }
                                     Text(model.isLoading ? "正在登录…" : "登录并播放")
+                                        .font(.headline)
                                 }
                                 .frame(maxWidth: .infinity)
+                                .padding(.vertical, 4)
                             }
                             .buttonStyle(.borderedProminent)
+                            .tint(AppTheme.accent)
                             .disabled(
                                 model.isLoading ||
                                 model.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
@@ -100,22 +260,28 @@ private struct LoginView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                .padding()
+                .padding(20)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: DiagnosticsView(model: model)) {
-                        Image(systemName: "doc.text.magnifyingglass")
+                    Menu {
+                        Button {
+                            showingAbout = true
+                        } label: {
+                            Label("关于", systemImage: "info.circle")
+                        }
+                        Button {
+                            showingDiagnostics = true
+                        } label: {
+                            Label("诊断日志", systemImage: "doc.text.magnifyingglass")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("诊断日志")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: UpdateLogView()) {
-                        Image(systemName: "list.bullet.rectangle")
-                    }
-                    .accessibilityLabel("更新日志")
+                    .accessibilityLabel("更多操作")
                 }
                 ToolbarItem(placement: .keyboard) {
                     Button("完成") {
@@ -123,6 +289,201 @@ private struct LoginView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingAbout) {
+                NavigationView {
+                    AboutView()
+                }
+            }
+            .sheet(isPresented: $showingDiagnostics) {
+                NavigationView {
+                    DiagnosticsView(model: model)
+                }
+            }
+        }
+    }
+}
+
+private struct CameraSelectionPage: View {
+    @ObservedObject var model: PlayerViewModel
+    @ObservedObject private var theme = ThemeStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                if model.cameras.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "video.slash")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text("暂无摄像头")
+                            .font(.headline)
+                        Text("请先登录并读取账号下的摄像头。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    ForEach(model.cameras) { camera in
+                        Button {
+                            DiagnosticsLogger.shared.info(
+                                "UI",
+                                "用户在独立摄像头选择页选择设备 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))"
+                            )
+                            model.playCamera(camera)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "web.camera")
+                                    .font(.title3)
+                                    .foregroundStyle(AppTheme.accent)
+                                    .frame(width: 30)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(camera.name)
+                                        .font(.body.weight(.medium))
+                                    Text(camera.macID)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if model.selectedCameraID == camera.macID {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(AppTheme.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Text("请选择要播放的摄像头")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .tint(theme.accent.color)
+        .navigationTitle("选择摄像头")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("返回") {
+                    DiagnosticsLogger.shared.info("UI", "用户从独立摄像头选择页返回播放页")
+                    dismiss()
+                }
+            }
+        }
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择页 count=\(model.cameras.count)")
+        }
+    }
+}
+
+private struct CameraSelectionMenuButton: View {
+    @ObservedObject var model: PlayerViewModel
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        Button {
+            DiagnosticsLogger.shared.info("UI", "用户从更多操作打开独立摄像头选择页")
+            isPresented = true
+        } label: {
+            Label("选择摄像头", systemImage: "video.badge.plus")
+        }
+    }
+}
+
+private struct AboutView: View {
+    @ObservedObject private var theme = ThemeStore.shared
+
+    var body: some View {
+        List {
+            Section {
+                VStack(spacing: 12) {
+                    AppMark()
+                    Text("爱家直连")
+                        .font(.title3.weight(.bold))
+                    Text("版本 \(AppVersionInfo.display) (\(AppVersionInfo.build))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+            }
+
+            Section("主题色") {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
+                    spacing: 12
+                ) {
+                    ForEach(AppAccent.allCases) { accent in
+                        Button {
+                            theme.accent = accent
+                        } label: {
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    Circle()
+                                        .fill(accent.color)
+                                        .frame(width: 30, height: 30)
+                                    if theme.accent == accent {
+                                        Image(systemName: "checkmark")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                }
+                                Text(accent.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("主题色\(accent.title)")
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("项目介绍") {
+                Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并在 iPhone 本机解码播放实时与内存卡回放视频。")
+            }
+
+            Section("作者") {
+                HStack {
+                    Text("作者")
+                    Spacer()
+                    Text("fucknima")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("邮箱")
+                    Spacer()
+                    Link("fucknimama@icloud.com", destination: URL(string: "mailto:fucknimama@icloud.com")!)
+                        .foregroundStyle(AppTheme.accent)
+                }
+            }
+
+            Section("仓库地址") {
+                Link("github.com/fucknima/yidongaijia", destination: URL(string: "https://github.com/fucknima/yidongaijia")!)
+            }
+
+            Section("开源许可") {
+                Text("本项目基于 MIT License 开源，允许自由使用、修改与分发。")
+                Text("Copyright © 2026 fucknima")
+                    .foregroundStyle(.secondary)
+                Link("查看完整许可协议", destination: URL(string: "https://github.com/fucknima/yidongaijia/blob/main/LICENSE")!)
+            }
+
+            Section("免责声明") {
+                Text("本项目是移动爱家的第三方 iOS 客户端，不是中国移动、移动爱家或其关联公司的官方应用、SDK，也不代表上述任何一方。请只在你有权使用的账号和摄像头上运行。云端接口、签名规则和服务策略可能变化；本项目不提供或绕过官方授权，也不保证接口长期稳定。")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("关于")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示关于页面")
         }
     }
 }
@@ -132,6 +493,9 @@ private struct PlayerScreen: View {
     @State private var showingHistory = false
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
+    @State private var showingAbout = false
+    @State private var showingCameraSelection = false
+    @State private var showingMediaLibrary = false
 
     var body: some View {
         NavigationView {
@@ -140,22 +504,44 @@ private struct PlayerScreen: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
-                                .font(.title2.weight(.semibold))
+                                .font(.title3.weight(.semibold))
                             Text(model.isLoading ? "正在连接云端…" : "移动爱家摄像头")
-                                .font(.subheadline)
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Circle()
-                            .fill(model.hasError ? Color.red : (model.isLoading ? Color.orange : Color.green))
-                            .frame(width: 10, height: 10)
+                        StatusPill(model: model)
                     }
 
                     // SwiftUI may replace this host during presentation, but
-                    // the model keeps one persistent VLC drawable throughout.
+                    // the model keeps one persistent player view throughout.
                     if model.streamURL != nil, !model.isReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
+                        }
+
+                        HStack(spacing: 12) {
+                            MediaActionButton(
+                                icon: "camera.fill",
+                                title: "截图",
+                                tint: AppTheme.accent
+                            ) {
+                                model.captureSnapshot()
+                            }
+                            MediaActionButton(
+                                icon: model.isRecording ? "stop.fill" : "record.circle",
+                                title: model.isRecording ? "停止录像" : "录像",
+                                tint: model.isRecording ? .red : AppTheme.accent
+                            ) {
+                                model.toggleRecording()
+                            }
+                            MediaActionButton(
+                                icon: "photo.on.rectangle.angled",
+                                title: "媒体库",
+                                tint: AppTheme.accent
+                            ) {
+                                showingMediaLibrary = true
+                            }
                         }
 
                         Button(role: .destructive) {
@@ -168,9 +554,10 @@ private struct PlayerScreen: View {
                     } else {
                         VStack(spacing: 12) {
                             Image(systemName: model.hasError ? "wifi.exclamationmark" : "video")
-                                .font(.system(size: 42))
-                                .foregroundStyle(model.hasError ? .red : .secondary)
+                                .font(.system(size: 40))
+                                .foregroundStyle(model.hasError ? .red : AppTheme.accent)
                             Text(model.isLoading ? "正在获取视频地址" : "暂时没有播放画面")
+                                .font(.body.weight(.medium))
                                 .foregroundStyle(.secondary)
 
                             if !model.isLoading {
@@ -178,12 +565,15 @@ private struct PlayerScreen: View {
                                     model.start()
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .tint(AppTheme.accent)
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 64)
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .padding(.vertical, 56)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                .fill(Color(.secondarySystemGroupedBackground))
+                        )
                     }
 
                     StatusText(model: model)
@@ -195,14 +585,30 @@ private struct PlayerScreen: View {
                             destination: HistoryView(model: model),
                             isActive: $showingHistory
                         ) {
-                            Label("内存卡回放", systemImage: "clock.arrow.circlepath")
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.title3)
+                                    .foregroundStyle(AppTheme.accent)
+                                    .frame(width: 30)
+                                Text("内存卡回放")
+                                    .font(.body.weight(.medium))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                .fill(Color(.secondarySystemGroupedBackground))
+                        )
                     }
                 }
                 .padding()
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("播放")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -215,14 +621,18 @@ private struct PlayerScreen: View {
                     .accessibilityLabel("诊断日志")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink(destination: UpdateLogView()) {
-                        Image(systemName: "list.bullet.rectangle")
-                    }
-                    .accessibilityLabel("更新日志")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Text("版本 \(AppVersionInfo.display)")
+                        CameraSelectionMenuButton(
+                            model: model,
+                            isPresented: $showingCameraSelection
+                        )
+                        Button {
+                            DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
+                            showingAbout = true
+                        } label: {
+                            Label("关于", systemImage: "info.circle")
+                        }
                         Button(role: .destructive) {
                             model.logout()
                         } label: {
@@ -240,11 +650,86 @@ private struct PlayerScreen: View {
                 DiagnosticsView(model: model)
             }
         }
+        .sheet(isPresented: $showingAbout) {
+            NavigationView {
+                AboutView()
+            }
+        }
+        .sheet(isPresented: $showingCameraSelection) {
+            NavigationView {
+                CameraSelectionPage(model: model)
+            }
+        }
+        .sheet(isPresented: $showingMediaLibrary) {
+            NavigationView {
+                MediaLibraryView()
+            }
+        }
         .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
             ScreenOrientation.restorePortrait()
         }) {
             FullscreenPlayerView(model: model)
         }
+    }
+}
+
+private struct MediaActionButton: View {
+    let icon: String
+    let title: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct StatusPill: View {
+    @ObservedObject var model: PlayerViewModel
+
+    private var color: Color {
+        if model.hasError { return .red }
+        if model.isLoading { return .orange }
+        if model.isPlaying { return AppTheme.accent }
+        return .gray
+    }
+
+    private var label: String {
+        if model.hasError { return "错误" }
+        if model.isLoading { return "连接中" }
+        if model.isPlaying { return "直播中" }
+        return "已停止"
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(color.opacity(0.12)))
     }
 }
 
@@ -254,20 +739,34 @@ private struct PlayerSurface: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VLCPlayerView(model: model)
+            IJKPlayerView(model: model)
                 .id(model.playerViewID)
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+
+            Text(model.networkSpeedText)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.black.opacity(0.35)))
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             Button(action: onFullscreen) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Color.black.opacity(0.35)))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
+            .frame(width: 68, height: 68)
+            .contentShape(Rectangle())
             .accessibilityLabel("横屏全屏")
-            .padding(10)
+            .padding(4)
         }
     }
 }
@@ -275,23 +774,39 @@ private struct PlayerSurface: View {
 private struct FullscreenPlayerView: View {
     @ObservedObject var model: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var replayControlsVisible = true
+    @State private var hideReplayControlsTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black
                 .ignoresSafeArea()
 
-            VLCPlayerView(model: model, role: .fullscreen)
+            IJKPlayerView(model: model, role: .fullscreen)
                 .id(model.playerViewID)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    toggleReplayControls()
+                }
 
-            if model.isReplay {
+            Text(model.networkSpeedText)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.black.opacity(0.4)))
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            if model.isReplay, replayControlsVisible {
                 VStack {
                     Spacer()
                     ReplayControls(model: model, presentation: .fullscreen)
                         .frame(maxWidth: .infinity)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(2)
@@ -301,12 +816,16 @@ private struct FullscreenPlayerView: View {
                 dismiss()
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Color.black.opacity(0.4)))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.black.opacity(0.7))
+            .buttonStyle(.plain)
+            .frame(width: 72, height: 72)
+            .contentShape(Rectangle())
             .accessibilityLabel("退出全屏")
-            .padding()
+            .padding(4)
         }
         .statusBar(hidden: true)
         .interactiveDismissDisabled()
@@ -314,6 +833,46 @@ private struct FullscreenPlayerView: View {
         .onAppear {
             DispatchQueue.main.async {
                 ScreenOrientation.lockLandscape()
+            }
+            if model.isReplay {
+                scheduleReplayControlsAutoHide()
+            }
+        }
+        .onChange(of: model.isReplay) { replay in
+            replayControlsVisible = true
+            if replay {
+                scheduleReplayControlsAutoHide()
+            } else {
+                hideReplayControlsTask?.cancel()
+                hideReplayControlsTask = nil
+            }
+        }
+        .onDisappear {
+            hideReplayControlsTask?.cancel()
+            hideReplayControlsTask = nil
+        }
+    }
+
+    private func toggleReplayControls() {
+        hideReplayControlsTask?.cancel()
+        hideReplayControlsTask = nil
+        withAnimation(.easeInOut(duration: 0.25)) {
+            replayControlsVisible.toggle()
+        }
+        if replayControlsVisible {
+            scheduleReplayControlsAutoHide()
+        }
+    }
+
+    private func scheduleReplayControlsAutoHide() {
+        guard model.isReplay else { return }
+        hideReplayControlsTask?.cancel()
+        hideReplayControlsTask = nil
+        hideReplayControlsTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                self.replayControlsVisible = false
             }
         }
     }
@@ -364,15 +923,6 @@ private struct StatusText: View {
     }
 }
 
-private struct ReleaseNote: Identifiable {
-    let version: String
-    let date: String
-    let title: String
-    let details: [String]
-
-    var id: String { "\(version)-\(date)-\(title)" }
-}
-
 private enum AppVersionInfo {
     static var display: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
@@ -380,206 +930,6 @@ private enum AppVersionInfo {
 
     static var build: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
-    }
-}
-
-private enum ReleaseNotesCatalog {
-    static let all: [ReleaseNote] = [
-        ReleaseNote(
-            version: "回放诊断修复",
-            date: "2026-08-02",
-            title: "回放诊断隔离与查询去重",
-            details: [
-                "诊断日志改为独立弹窗，不再通过回放导航栈推入页面。",
-                "打开、刷新和关闭诊断页不会停止或重建当前回放播放器。",
-                "回放期间忽略页面生命周期触发的自动历史录像查询，避免重复请求和日志刷屏。",
-                "保留手动查询历史录像功能，并延长重复查询保护时间。"
-            ]
-        ),
-        ReleaseNote(
-            version: "1.1",
-            date: "2026-08-02",
-            title: "回放与诊断导航修复",
-            details: [
-                "修复内存卡回放时打开诊断页会误停止回放并返回播放页。",
-                "只有明确返回播放页或点击停止回放，才会结束回放会话。",
-                "修复回放页面导航过程中的播放器释放问题。",
-                "修复退出登录后重启 App 仍自动进入播放页的问题。",
-                "构建版本改为每次 GitHub Actions 构建自动递增 0.1。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 speedfix",
-            date: "2026-08-02",
-            title: "回放倍速与播放器状态修复",
-            details: [
-                "修复倍速设置被播放器回调覆盖的问题。",
-                "回放切换、拖动进度和播放器重建时重新应用倍速。",
-                "降低播放器视图更新对回放进度的干扰。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 replaydiagfix",
-            date: "2026-08-02",
-            title: "回放进度与诊断稳定性修复",
-            details: [
-                "限制历史录像查询重复请求，避免诊断页面出现大量日志。",
-                "忽略过期播放器和旧回放任务的进度回调。",
-                "修复拖动进度后播放器黑屏、回放状态不同步和会话过期重试问题。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v23–v24",
-            date: "2026-08-02",
-            title: "历史回放交互修复",
-            details: [
-                "按录像片段起点请求历史地址，避免点击当天回放从错误时间开始。",
-                "增加服务器回放定位和拖动进度的恢复逻辑。",
-                "修复回放结束切回直播后页面状态合并、黑屏和无画面提示问题。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v21–v22",
-            date: "2026-08-02",
-            title: "日志、文件访问与前后台修复",
-            details: [
-                "支持导出诊断日志，并允许从 iPhone 文件 App 访问。",
-                "修复回放切换后台再回来后只剩声音或视图丢失。",
-                "增加回放播放器在前后台切换时的恢复和旧地址清理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v19–v20",
-            date: "2026-08-02",
-            title: "进度条与倍速播放",
-            details: [
-                "增加内存卡回放进度条和时间显示。",
-                "增加 0.5x、1x、2x、3x、5x 倍速播放。",
-                "拖动进度时使用云端回放定位，避免本地播放器时间与服务器录像不同步。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v16–v18",
-            date: "2026-08-02",
-            title: "构建工程与资源整理",
-            details: [
-                "整理 Xcode 工程、资源目录和 MobileVLCKit 构建所需文件。",
-                "修复源码压缩包目录层级，确保 GitHub Actions 能正确解包构建。",
-                "补齐深色/浅色 App 图标资源。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v10–v14",
-            date: "2026-08-02",
-            title: "登录、播放和页面结构完善",
-            details: [
-                "登录失败时返回登录界面，并保存账号密码输入内容。",
-                "将登录、播放、内存卡回放和诊断日志分成独立页面。",
-                "增加摄像头选择、登录状态恢复和播放器错误状态提示。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v8–v9",
-            date: "2026-08-02",
-            title: "界面与设备资源优化",
-            details: [
-                "更换爱家直连 App 图标，并加入浅色/深色图标适配。",
-                "优化播放页布局、摄像头状态显示和控制按钮。",
-                "增加本机解码播放器视图的挂载与释放处理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v7",
-            date: "2026-08-02",
-            title: "前后台播放恢复",
-            details: [
-                "应用进入后台时暂停或释放不再可靠的播放状态。",
-                "回到前台时重新获取实时地址，避免从几分钟前的缓存位置继续播放。",
-                "增加播放保活和实时流恢复状态提示。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v6",
-            date: "2026-08-02",
-            title: "云台与内存卡回放",
-            details: [
-                "增加上下左右云台控制。",
-                "按日期获取内存卡录像列表并打开历史录像。",
-                "增加历史录像结束后恢复实时流的处理。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v5",
-            date: "2026-08-02",
-            title: "诊断日志",
-            details: [
-                "增加实时日志页面和日志导出。",
-                "记录登录、HTTP 请求、播放器状态、保活和错误信息。",
-                "对手机号、密码、令牌和签名地址进行脱敏。"
-            ]
-        ),
-        ReleaseNote(
-            version: "历史构建 v3–v4",
-            date: "2026-08-02",
-            title: "直连播放基础版",
-            details: [
-                "手机直接登录移动爱家云端，不经过中转服务器。",
-                "获取实时地址并在 iPhone 本机用 MobileVLCKit 解码播放。",
-                "支持账号下摄像头列表和可选摄像头名称/mac_id。"
-            ]
-        ),
-        ReleaseNote(
-            version: "1.0",
-            date: "2026-08-02",
-            title: "首个可用版本",
-            details: [
-                "整合登录、实时播放、云台、内存卡回放和诊断日志功能。",
-                "密码保存到 iOS 钥匙串，诊断日志支持文件访问。"
-            ]
-        )
-    ]
-}
-
-private struct UpdateLogView: View {
-    var body: some View {
-        List {
-            Section {
-                HStack {
-                    Label("当前版本", systemImage: "app.badge")
-                    Spacer()
-                    Text("\(AppVersionInfo.display) (\(AppVersionInfo.build))")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline.monospacedDigit())
-                }
-            }
-
-            Section("修复记录") {
-                ForEach(ReleaseNotesCatalog.all) { note in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(note.version.hasPrefix("历史") ? note.version : "版本 \(note.version)")
-                                .font(.headline)
-                            Spacer()
-                            Text(note.date)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(note.title)
-                            .font(.subheadline.weight(.semibold))
-
-                        ForEach(note.details, id: \.self) { detail in
-                            Label(detail, systemImage: "checkmark.circle")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .navigationTitle("更新日志")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -593,8 +943,6 @@ private struct ReplayControls: View {
     let presentation: ReplayControlsPresentation
     @State private var sliderValue = 0.0
     @State private var isEditing = false
-
-    private let rates: [Float] = [0.5, 1.0, 2.0, 3.0, 5.0]
 
     init(
         model: PlayerViewModel,
@@ -636,10 +984,19 @@ private struct ReplayControls: View {
         }
     }
 
+    private var displaySecond: Int64 {
+        isEditing ? previewSecond : model.replayCurrentSecond
+    }
+
+    private var previewSecond: Int64 {
+        guard model.replayDurationSecond > 0 else { return 0 }
+        return max(0, min(model.replayDurationSecond, Int64((Double(model.replayDurationSecond) * sliderValue).rounded())))
+    }
+
     private var controlsContent: some View {
         VStack(spacing: presentation == .fullscreen ? 6 : 8) {
             HStack {
-                Text(formatTime(model.replayCurrentSecond))
+                Text(formatTime(displaySecond))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(secondaryForegroundColor)
                 Spacer()
@@ -661,28 +1018,6 @@ private struct ReplayControls: View {
                 }
             )
             .disabled(model.isLoading || model.replayDurationSecond <= 0)
-
-            HStack {
-                Label("内存卡回放", systemImage: "play.rectangle")
-                    .font(.subheadline)
-                Spacer()
-                Menu {
-                    ForEach(rates, id: \.self) { rate in
-                        Button {
-                            model.setReplayRate(rate)
-                        } label: {
-                            if abs(model.replayRate - rate) < 0.01 {
-                                Label(rateLabel(rate), systemImage: "checkmark")
-                            } else {
-                                Text(rateLabel(rate))
-                            }
-                        }
-                    }
-                } label: {
-                    Label(rateLabel(model.replayRate), systemImage: "speedometer")
-                }
-                .disabled(model.isLoading)
-            }
         }
     }
 
@@ -700,13 +1035,6 @@ private struct ReplayControls: View {
         }
         return String(format: "%02lld:%02lld", minutes, remainingSeconds)
     }
-
-    private func rateLabel(_ rate: Float) -> String {
-        if abs(rate.rounded() - rate) < 0.01 {
-            return String(format: "%.0fx", rate)
-        }
-        return String(format: "%.1fx", rate)
-    }
 }
 
 private struct PTZControlPanel: View {
@@ -717,28 +1045,30 @@ private struct PTZControlPanel: View {
     }
 
     var body: some View {
-        GroupBox {
-            VStack(spacing: 10) {
+        AppTheme.card {
+            VStack(spacing: 14) {
                 Text("云台控制")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                PTZDirectionButton(direction: .up, model: model)
+                VStack(spacing: 10) {
+                    PTZDirectionButton(direction: .up, model: model)
 
-                HStack(spacing: 12) {
-                    PTZDirectionButton(direction: .left, model: model)
+                    HStack(spacing: 10) {
+                        PTZDirectionButton(direction: .left, model: model)
 
-                    Image(systemName: "camera.metering.center.weighted")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 58, height: 42)
+                        Image(systemName: "camera.metering.center.weighted")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 56, height: 44)
 
-                    PTZDirectionButton(direction: .right, model: model)
+                        PTZDirectionButton(direction: .right, model: model)
+                    }
+
+                    PTZDirectionButton(direction: .down, model: model)
                 }
-
-                PTZDirectionButton(direction: .down, model: model)
-
+                .frame(maxWidth: .infinity)
+                .disabled(isDisabled)
             }
-            .frame(maxWidth: .infinity)
-            .disabled(isDisabled)
         }
     }
 }
@@ -752,9 +1082,15 @@ private struct PTZDirectionButton: View {
             model.controlPTZ(direction)
         } label: {
             Image(systemName: direction.systemImage)
-                .frame(width: 58, height: 42)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 52, height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .accessibilityLabel("云台\(direction.title)")
     }
 }
@@ -770,8 +1106,10 @@ private struct HistoryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                GroupBox {
+                AppTheme.card {
                     VStack(alignment: .leading, spacing: 12) {
+                        Text("选择日期")
+                            .font(.subheadline.weight(.semibold))
                         DatePicker("日期", selection: $selectedDate, displayedComponents: .date)
 
                         Button {
@@ -783,10 +1121,13 @@ private struct HistoryView: View {
                                     ProgressView()
                                 }
                                 Text(model.isLoadingRecordings ? "正在查询…" : "查询历史录像")
+                                    .font(.headline)
                             }
                             .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(AppTheme.accent)
                         .disabled(model.isLoadingRecordings || !model.isAuthenticated)
                     }
                 }
@@ -813,12 +1154,18 @@ private struct HistoryView: View {
                     ProgressView("正在读取内存卡录像…")
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else if model.recordings.isEmpty {
-                    Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 32)
+                    VStack(spacing: 10) {
+                        Image(systemName: "film.stack")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
                 } else {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("录像片段（\(model.recordings.count)）")
                             .font(.headline)
 
@@ -829,7 +1176,7 @@ private struct HistoryView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "play.circle.fill")
                                         .font(.title2)
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(AppTheme.accent)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
@@ -839,13 +1186,16 @@ private struct HistoryView: View {
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
                                         .foregroundStyle(.tertiary)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color(.secondarySystemGroupedBackground))
+                                )
                             }
                             .buttonStyle(.plain)
-                            Divider()
                         }
                     }
                 }
@@ -854,6 +1204,7 @@ private struct HistoryView: View {
             }
             .padding()
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("内存卡回放")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -879,9 +1230,13 @@ private struct HistoryView: View {
             }
         }
         .onAppear {
+            model.setHistoryVisible(true)
             guard !hasLoadedOnce, model.isAuthenticated else { return }
             hasLoadedOnce = true
             model.loadRecordings(for: selectedDate)
+        }
+        .onDisappear {
+            model.setHistoryVisible(false)
         }
         .sheet(isPresented: $showingDiagnostics) {
             NavigationView {
@@ -909,18 +1264,30 @@ private struct DiagnosticsView: View {
     let model: PlayerViewModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var logger = DiagnosticsLogger.shared
+    @ObservedObject private var theme = ThemeStore.shared
     @State private var diagnosticsURL: URL?
     @State private var showingShareSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
-                    .foregroundStyle(.green)
-                Spacer()
-                Text("\(logger.visibleLines.count) 行")
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 3) {
+                HStack {
+                    Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(AppTheme.accent)
+                    Spacer()
+                    Text("\(logger.visibleLines.count) 行")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                if logger.visibleLevels.count != DiagnosticsLogger.Level.allCases.count {
+                    HStack {
+                        Text(filterSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
@@ -960,11 +1327,32 @@ private struct DiagnosticsView: View {
         }
         .navigationTitle("诊断日志")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(theme.accent.color)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("完成") {
                     dismiss()
                 }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        logger.visibleLevels = Set(DiagnosticsLogger.Level.allCases)
+                    } label: {
+                        if logger.visibleLevels == Set(DiagnosticsLogger.Level.allCases) {
+                            Label("显示全部", systemImage: "checkmark")
+                        } else {
+                            Text("显示全部")
+                        }
+                    }
+                    Divider()
+                    ForEach(DiagnosticsLogger.Level.allCases, id: \.self) { level in
+                        Toggle(level.title, isOn: levelBinding(level))
+                    }
+                } label: {
+                    Label("筛选", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityLabel("日志等级筛选")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -991,9 +1379,29 @@ private struct DiagnosticsView: View {
             diagnosticsURL = nil
         }) {
             if let diagnosticsURL = diagnosticsURL {
-                ActivityView(activityItems: [diagnosticsURL])
+                EmbeddedActivityView(activityItems: [diagnosticsURL])
             }
         }
+    }
+
+    private func levelBinding(_ level: DiagnosticsLogger.Level) -> Binding<Bool> {
+        Binding(
+            get: { logger.visibleLevels.contains(level) },
+            set: { isOn in
+                if isOn {
+                    logger.visibleLevels.insert(level)
+                } else {
+                    logger.visibleLevels.remove(level)
+                }
+            }
+        )
+    }
+
+    private var filterSummary: String {
+        let enabled = DiagnosticsLogger.Level.allCases
+            .filter { logger.visibleLevels.contains($0) }
+            .map(\.title)
+        return enabled.isEmpty ? "已隐藏全部等级" : "已筛选：\(enabled.joined(separator: "、"))"
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -1009,7 +1417,301 @@ private struct DiagnosticsView: View {
     }
 }
 
+private struct MediaLibraryView: View {
+    @ObservedObject private var library = MediaLibrary.shared
+    @ObservedObject private var theme = ThemeStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var previewItem: MediaItem?
+
+    var body: some View {
+        Group {
+            if library.items.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.secondary)
+                    Text("暂无截图或录像")
+                        .font(.headline)
+                    Text("在直播画面点击截图或录像，内容会保存在这里。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            } else {
+                List {
+                    ForEach(library.items) { item in
+                        Button {
+                            previewItem = item
+                        } label: {
+                            MediaLibraryRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                library.delete(item)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                            Button {
+                                presentSystemShare(activityItems: [sharePayload(for: item)])
+                            } label: {
+                                Label("分享", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(AppTheme.accent)
+                        }
+                        .contextMenu {
+                            Button {
+                                presentSystemShare(activityItems: [sharePayload(for: item)])
+                            } label: {
+                                Label("分享", systemImage: "square.and.arrow.up")
+                            }
+                            Button(role: .destructive) {
+                                library.delete(item)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
+        .tint(theme.accent.color)
+        .navigationTitle("媒体库")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("完成") {
+                    dismiss()
+                }
+            }
+        }
+        .sheet(item: $previewItem) { item in
+            NavigationView {
+                MediaPreviewView(item: item)
+            }
+        }
+        .onAppear {
+            library.reload()
+        }
+    }
+
+    /// Both images and videos are shared as file URLs. QuickLook generates
+    /// the preview thumbnail from the file; sharing a UIImage instead can
+    /// fall back to a generic white document icon when the image fails to
+    /// load or the system preview path is unavailable.
+    private func sharePayload(for item: MediaItem) -> Any {
+        item.url as Any
+    }
+}
+
+private struct MediaLibraryRow: View {
+    let item: MediaItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            thumbnail
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.fileName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(rowDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        switch item.kind {
+        case .image:
+            if let image = UIImage(contentsOfFile: item.url.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                placeholder
+            }
+        case .video:
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                Image(systemName: "play.fill")
+                    .font(.title3)
+                    .foregroundStyle(AppTheme.accent)
+            }
+        }
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(.secondarySystemBackground))
+            .overlay(
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            )
+    }
+
+    private var rowDetail: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let dateText = formatter.string(from: item.date)
+        let sizeText = item.fileSizeText
+        return sizeText.isEmpty ? dateText : "\(dateText) · \(sizeText)"
+    }
+}
+
+private struct MediaPreviewView: View {
+    let item: MediaItem
+
+    var body: some View {
+        Group {
+            switch item.kind {
+            case .image:
+                if let image = UIImage(contentsOfFile: item.url.path) {
+                    ScrollView {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding()
+                    }
+                } else {
+                    Text("无法读取图片")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            case .video:
+                // IJK plays local HEVC/TS recordings that AVPlayer may reject.
+                IJKLocalPlayerView(url: item.url)
+                    .ignoresSafeArea()
+            }
+        }
+        .background(Color.black)
+        .navigationTitle(item.fileName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Minimal IJK-backed local video player for media library previews.
+/// The preview uses its own player instance so the live player keeps playing.
+private struct IJKLocalPlayerView: UIViewRepresentable {
+    let url: URL
+
+    final class Coordinator {
+        weak var player: IJKFFMoviePlayerController?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let hostView = UIView()
+        hostView.backgroundColor = .black
+        guard let options = IJKFFOptions.byDefault(),
+              let player = IJKFFMoviePlayerController(contentURL: url, with: options),
+              let playerView = player.view else {
+            return hostView
+        }
+        playerView.frame = hostView.bounds
+        playerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        hostView.addSubview(playerView)
+        player.prepareToPlay()
+        player.play()
+        context.coordinator.player = player
+        return hostView
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.player?.view.frame = uiView.bounds
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.player?.shutdown()
+    }
+}
+
 private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    @Binding var isPresented: Bool
+
+    final class Coordinator {
+        var presented = false
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        guard isPresented, !context.coordinator.presented else { return }
+
+        // Defer until the container view controller is attached to the window
+        // hierarchy; presenting immediately leaves the share panel invisible.
+        context.coordinator.presented = true
+        DispatchQueue.main.async { [weak controller] in
+            guard let controller = controller, controller.presentedViewController == nil else {
+                context.coordinator.presented = false
+                return
+            }
+            let activity = UIActivityViewController(
+                activityItems: activityItems,
+                applicationActivities: nil
+            )
+            activity.completionWithItemsHandler = { _, _, _, _ in
+                context.coordinator.presented = false
+                isPresented = false
+            }
+            controller.present(activity, animated: true)
+        }
+    }
+}
+
+/// Presents the system share sheet from the topmost presented view
+/// controller. Sharing through SwiftUI sheets is unreliable on some iOS
+/// versions (blank panel on first presentation), and presenting from the root
+/// controller silently fails while another sheet (the media library itself)
+/// is on screen, so we walk the presentation chain instead.
+private func presentSystemShare(activityItems: [Any]) {
+    guard let scene = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene }).first,
+        var top = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
+        return
+    }
+    while let presented = top.presentedViewController {
+        top = presented
+    }
+    guard top.presentedViewController == nil else { return }
+    let activity = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    // Keep a strong reference until the deferred presentation runs; a weak
+    // capture would be released before the menu dismiss animation finishes.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        guard top.presentedViewController == nil else { return }
+        top.present(activity, animated: true)
+    }
+}
+
+/// Embeds a UIActivityViewController directly as sheet content. This works on
+/// some iOS versions for plain documents and keeps the diagnostics export
+/// flow unchanged from the original working build.
+private struct EmbeddedActivityView: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {

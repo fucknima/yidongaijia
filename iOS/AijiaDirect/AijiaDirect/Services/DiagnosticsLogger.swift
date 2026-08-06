@@ -6,11 +6,20 @@ import Foundation
 /// The logger intentionally writes only to the app sandbox. Passwords, tokens,
 /// signatures and URL query strings are removed before a line is persisted.
 final class DiagnosticsLogger: ObservableObject {
-    enum Level: String {
+    enum Level: String, CaseIterable {
         case debug = "DEBUG"
         case info = "INFO"
         case warning = "WARN"
         case error = "ERROR"
+
+        var title: String {
+            switch self {
+            case .debug: return "调试"
+            case .info: return "信息"
+            case .warning: return "警告"
+            case .error: return "错误"
+            }
+        }
     }
 
     static let shared = DiagnosticsLogger()
@@ -21,6 +30,11 @@ final class DiagnosticsLogger: ObservableObject {
     private var lines: [String]
     private let dateFormatter: ISO8601DateFormatter
     private let maxLines = 4_000
+    @Published var visibleLevels: Set<Level> = Set(Level.allCases) {
+        didSet {
+            refreshVisibleLines()
+        }
+    }
     @Published private(set) var visibleLines: [String] = []
 
     private init() {
@@ -43,7 +57,7 @@ final class DiagnosticsLogger: ObservableObject {
         } else {
             lines = []
         }
-        visibleLines = lines
+        refreshVisibleLines()
     }
 
     func debug(_ category: String, _ message: String) {
@@ -80,13 +94,12 @@ final class DiagnosticsLogger: ObservableObject {
     }
 
     func clear() {
-        let snapshot = queue.sync { () -> [String] in
+        queue.sync {
             lines.removeAll(keepingCapacity: true)
             try? fileManager.removeItem(at: logFileURL)
-            return lines
         }
         DispatchQueue.main.async { [weak self] in
-            self?.visibleLines = snapshot
+            self?.refreshVisibleLines()
         }
     }
 
@@ -160,11 +173,33 @@ final class DiagnosticsLogger: ObservableObject {
                 self.lines = Array(self.lines.suffix(self.maxLines))
             }
             self.persistLocked()
-            let snapshot = self.lines
             DispatchQueue.main.async { [weak self] in
-                self?.visibleLines = snapshot
+                self?.refreshVisibleLines()
             }
         }
+    }
+
+    private func refreshVisibleLines() {
+        let snapshot = queue.sync {
+            lines.filter { line in
+                guard let level = Self.level(of: line) else { return false }
+                return visibleLevels.contains(level)
+            }
+        }
+        visibleLines = snapshot
+    }
+
+    private static let levelPattern = try! NSRegularExpression(
+        pattern: #"^\[[^\]]+\] \[([A-Z]+)\]"#
+    )
+
+    static func level(of line: String) -> Level? {
+        let fullRange = NSRange(line.startIndex..<line.endIndex, in: line)
+        guard let match = levelPattern.firstMatch(in: line, range: fullRange),
+              let levelRange = Range(match.range(at: 1), in: line) else {
+            return nil
+        }
+        return Level(rawValue: String(line[levelRange]))
     }
 
     private func persistLocked() {
