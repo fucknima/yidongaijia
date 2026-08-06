@@ -1498,16 +1498,12 @@ private struct MediaLibraryView: View {
         }
     }
 
-    /// Images are shared as UIImage so the share sheet does not depend on
-    /// QuickLook preview generation for freshly written files. Videos keep
-    /// sharing the file URL.
+    /// Both images and videos are shared as file URLs. QuickLook generates
+    /// the preview thumbnail from the file; sharing a UIImage instead can
+    /// fall back to a generic white document icon when the image fails to
+    /// load or the system preview path is unavailable.
     private func sharePayload(for item: MediaItem) -> Any {
-        switch item.kind {
-        case .image:
-            return UIImage(contentsOfFile: item.url.path) ?? item.url as Any
-        case .video:
-            return item.url as Any
-        }
+        item.url as Any
     }
 }
 
