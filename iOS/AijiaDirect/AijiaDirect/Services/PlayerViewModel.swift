@@ -1010,7 +1010,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        let player = IJKFFMoviePlayerController(contentURL: streamURL, with: nil)
+        guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: nil) else {
+            status = "播放器初始化失败"
+            hasError = true
+            logger.error("PLAYER", "IJK 播放器初始化失败 url=\(DiagnosticsLogger.redactedURL(streamURL))")
+            return
+        }
         player.setPlayerOptionIntValue(300, forKey: "network-caching")
         player.shouldAutoplay = true
         self.player = player
