@@ -107,7 +107,16 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     deinit {
-        unregisterPlayerObservers()
+        let center = NotificationCenter.default
+        if let observer = playbackStateObserver {
+            center.removeObserver(observer)
+        }
+        if let observer = playbackFinishObserver {
+            center.removeObserver(observer)
+        }
+        if let observer = loadStateObserver {
+            center.removeObserver(observer)
+        }
     }
 
     private func registerPlayerObservers() {
@@ -139,22 +148,6 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 self?.handleLoadStateChanged(notification)
             }
         }
-    }
-
-    private func unregisterPlayerObservers() {
-        let center = NotificationCenter.default
-        if let observer = playbackStateObserver {
-            center.removeObserver(observer)
-        }
-        if let observer = playbackFinishObserver {
-            center.removeObserver(observer)
-        }
-        if let observer = loadStateObserver {
-            center.removeObserver(observer)
-        }
-        playbackStateObserver = nil
-        playbackFinishObserver = nil
-        loadStateObserver = nil
     }
 
     func autoConnectIfSaved() {
@@ -480,7 +473,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     func captureSnapshot() {
-        guard let player = player, player.isPlaying, !isReplay, !isRecording else {
+        guard let player = player, player.isPlaying(), !isReplay, !isRecording else {
             status = isReplay ? "历史回放时不能截图" : "当前没有可截图的直播画面"
             hasError = true
             return
@@ -1017,7 +1010,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        let player = IJKFFMoviePlayerController(contentURL: streamURL)
+        let player = IJKFFMoviePlayerController(contentURL: streamURL, options: nil)
         player.setPlayerOptionIntValue(300, forKey: "network-caching")
         player.shouldAutoplay = true
         self.player = player
@@ -1363,8 +1356,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
         let lowerBound = recording.playbackStartTime
         let upperBound = max(lowerBound, recording.endTime - 1)
         let relativeSecond: Int64
-        if let player = player, player.isPlaying {
-            let milliseconds = max(0, Int64(player.time.intValue))
+        if let player = player, player.isPlaying() {
+            let milliseconds = max(0, Int64(player.currentPlaybackTime * 1_000))
             let absolute = (replayPlaybackStartTime ?? recording.playbackStartTime) + milliseconds / 1_000
             relativeSecond = max(0, min(replayDurationSecond, absolute - recording.startTime))
         } else {
