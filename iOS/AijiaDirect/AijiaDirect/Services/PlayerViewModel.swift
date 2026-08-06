@@ -522,14 +522,17 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private func startRecording() {
         guard let player = player, !isRecording else { return }
+        // IJK tees input packets to the file inside the demuxer thread;
+        // playback continues without interruption. The container is chosen by
+        // the file extension (.ts remuxes live H.265 streams losslessly and
+        // plays back reliably in IJK; mp4 requires valid hvcC extradata that
+        // mid-stream recordings may lack).
         let destination = MediaLibrary.uniqueFileURL(
             in: MediaLibrary.recordingsDirectory,
             baseName: "Live",
-            ext: "mp4"
+            ext: "ts"
         )
 
-        // IJK tees input packets to the file inside the demuxer thread;
-        // playback continues without interruption.
         let result = player.startRecord(withPath: destination.path)
         guard result == 0 else {
             status = "录像启动失败（错误码 \(result)）"
@@ -915,7 +918,13 @@ final class PlayerViewModel: NSObject, ObservableObject {
         replayProgressTimer?.invalidate()
         replayProgressTimer = nil
         logger.debug("REPLAY", "服务器回放定位成功，重启播放器恢复播放")
+        // Stop first (fast) before the heavier shutdown; shutdown can block
+        // on the demux thread while it is still reading the old stream.
+        player?.stop()
         tearDownPlayer()
+        // Force SwiftUI to rebuild the surface host so the new player view is
+        // freshly attached instead of inheriting a stale render layer.
+        playerViewID = UUID()
         preparePlayerIfPossible()
         scheduleReplayProgressTimer()
     }

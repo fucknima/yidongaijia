@@ -1,4 +1,3 @@
-import AVKit
 import SwiftUI
 import UIKit
 
@@ -1500,12 +1499,24 @@ private struct MediaLibraryView: View {
         .sheet(isPresented: $showingShareSheet, onDismiss: {
             sharingItem = nil
         }) {
-            if let url = sharingItem?.url {
-                EmbeddedActivityView(activityItems: [url])
+            if let item = sharingItem {
+                EmbeddedActivityView(activityItems: [sharePayload(for: item)])
             }
         }
         .onAppear {
             library.reload()
+        }
+    }
+
+    /// Images are shared as UIImage so the system share sheet does not depend
+    /// on QuickLook preview generation for freshly written files (which can
+    /// render a blank panel on first share). Videos keep sharing the file URL.
+    private func sharePayload(for item: MediaItem) -> Any {
+        switch item.kind {
+        case .image:
+            return UIImage(contentsOfFile: item.url.path) ?? item.url as Any
+        case .video:
+            return item.url as Any
         }
     }
 }
@@ -1577,7 +1588,6 @@ private struct MediaLibraryRow: View {
 
 private struct MediaPreviewView: View {
     let item: MediaItem
-    @State private var player: AVPlayer?
 
     var body: some View {
         Group {
@@ -1596,23 +1606,53 @@ private struct MediaPreviewView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             case .video:
-                VideoPlayer(player: player)
+                // IJK plays local HEVC/TS recordings that AVPlayer may reject.
+                IJKLocalPlayerView(url: item.url)
                     .ignoresSafeArea()
             }
         }
         .background(Color.black)
         .navigationTitle(item.fileName)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if item.kind == .video, player == nil {
-                player = AVPlayer(url: item.url)
-                player?.play()
-            }
+    }
+}
+
+/// Minimal IJK-backed local video player for media library previews.
+/// The preview uses its own player instance so the live player keeps playing.
+private struct IJKLocalPlayerView: UIViewRepresentable {
+    let url: URL
+
+    final class Coordinator {
+        weak var player: IJKFFMoviePlayerController?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let hostView = UIView()
+        hostView.backgroundColor = .black
+        guard let options = IJKFFOptions.byDefault(),
+              let player = IJKFFMoviePlayerController(contentURL: url, with: options) else {
+            return hostView
         }
-        .onDisappear {
-            player?.pause()
-            player = nil
-        }
+        let playerView = player.view
+        playerView.frame = hostView.bounds
+        playerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        hostView.addSubview(playerView)
+        player.prepareToPlay()
+        player.play()
+        context.coordinator.player = player
+        return hostView
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.player?.view.frame = uiView.bounds
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.player?.shutdown()
     }
 }
 

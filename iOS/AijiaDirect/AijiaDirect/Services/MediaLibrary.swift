@@ -55,7 +55,7 @@ final class MediaLibrary: ObservableObject {
 
     func reload() {
         let captures = files(in: Self.capturesDirectory, extensions: ["png"])
-        let recordings = files(in: Self.recordingsDirectory, extensions: ["mp4"])
+        let recordings = files(in: Self.recordingsDirectory, extensions: ["mp4", "ts"])
         items = (captures + recordings).sorted { $0.date > $1.date }
     }
 
@@ -99,7 +99,7 @@ final class MediaLibrary: ObservableObject {
             let ext = (name as NSString).pathExtension.lowercased()
             guard extensions.contains(ext) else { return nil }
             let url = directory.appendingPathComponent(name)
-            let kind: MediaItem.Kind = ext == "mp4" ? .video : .image
+            let kind: MediaItem.Kind = (ext == "mp4" || ext == "ts") ? .video : .image
             return MediaItem(url: url, kind: kind)
         }
     }
