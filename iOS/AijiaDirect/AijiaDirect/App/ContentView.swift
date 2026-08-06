@@ -1704,9 +1704,10 @@ private func presentSystemShare(activityItems: [Any]) {
     }
     guard top.presentedViewController == nil else { return }
     let activity = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    // Defer until any context menu or swipe action dismiss animation settles.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak activity] in
-        guard let activity = activity, top.presentedViewController == nil else { return }
+    // Keep a strong reference until the deferred presentation runs; a weak
+    // capture would be released before the menu dismiss animation finishes.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        guard top.presentedViewController == nil else { return }
         top.present(activity, animated: true)
     }
 }
