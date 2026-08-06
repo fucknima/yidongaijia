@@ -1635,10 +1635,10 @@ private struct IJKLocalPlayerView: UIViewRepresentable {
         let hostView = UIView()
         hostView.backgroundColor = .black
         guard let options = IJKFFOptions.byDefault(),
-              let player = IJKFFMoviePlayerController(contentURL: url, with: options) else {
+              let player = IJKFFMoviePlayerController(contentURL: url, with: options),
+              let playerView = player.view else {
             return hostView
         }
-        let playerView = player.view
         playerView.frame = hostView.bounds
         playerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hostView.addSubview(playerView)
