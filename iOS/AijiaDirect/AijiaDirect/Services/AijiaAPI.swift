@@ -652,6 +652,8 @@ final class AijiaAPI: AijiaAPIClient {
     /// `1000000` and delivers the SMS without requiring a session. The
     /// form-encoded `userAccount` variant is rejected with `5000001`.
     /// Note: a successful response carries `data: null`; only the code matters.
+    /// The device identity fields must match the later tokenvalidate request,
+    /// otherwise the code is rejected with `5101007 验证码错误或失效`.
     func sendSmsCode() async throws {
         guard !phone.isEmpty else {
             throw AijiaAPIError.server(action: "发送验证码", message: "缺少手机号")
@@ -664,6 +666,13 @@ final class AijiaAPI: AijiaAPIClient {
             "type": "login",
             "phoneBrand": Self.officialPhoneBrand,
             "phoneModel": phoneModel,
+            "deviceUuid": deviceID,
+            "idfv": deviceID,
+            "phoneID": deviceID,
+            "openUdid": "",
+            "isWifi": "1",
+            "provCode": userSelectedProvCode,
+            "cityCode": userSelectedCityCode,
         ]
 
         var request = URLRequest(url: Self.sendSmsCodeURL)
