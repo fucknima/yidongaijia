@@ -17,6 +17,7 @@ struct ContentView: View {
             }
         }
         .tint(theme.accent.color)
+        .preferredColorScheme(theme.appearance.colorScheme)
         .onAppear {
             model.autoConnectIfSaved()
             presentCameraSelectionIfNeeded()
@@ -95,10 +96,43 @@ private enum AppAccent: String, CaseIterable, Identifiable {
     }
 }
 
+private enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 private final class ThemeStore: ObservableObject {
     static let shared = ThemeStore()
 
     private static let accentKey = "appearance.accent"
+    private static let appearanceKey = "appearance.mode"
 
     @Published var accent: AppAccent {
         didSet {
@@ -107,9 +141,22 @@ private final class ThemeStore: ObservableObject {
         }
     }
 
+    @Published var appearance: AppAppearance {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
+            DiagnosticsLogger.shared.info("UI", "用户切换外观模式 mode=\(appearance.rawValue)")
+        }
+    }
+
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.accentKey)
         accent = AppAccent(rawValue: saved ?? "") ?? .teal
+        let savedAppearance = UserDefaults.standard.string(forKey: Self.appearanceKey)
+        appearance = AppAppearance(rawValue: savedAppearance ?? "") ?? .system
+        DiagnosticsLogger.shared.info(
+            "UI",
+            "主题配置已载入 accent=\(accent.rawValue) mode=\(appearance.rawValue)"
+        )
     }
 }
 
@@ -119,6 +166,8 @@ private enum AppTheme {
     }
 
     static let cardRadius: CGFloat = 16
+
+    static var softAccent: Color { accent.opacity(0.09) }
 
     static var cardBackground: Color {
         Color(.secondarySystemGroupedBackground)
@@ -200,7 +249,7 @@ private struct LoginView: View {
                         VStack(spacing: 5) {
                             Text("爱家直连")
                                 .font(.title.weight(.bold))
-                            Text("登录移动爱家账号，摄像头画面在本机解码")
+                            Text("移动爱家第三方 iOS 客户端")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -209,24 +258,22 @@ private struct LoginView: View {
 
                     AppTheme.card {
                         VStack(spacing: 14) {
-                            TextField("移动手机号", text: $model.phone)
-                                .textContentType(.telephoneNumber)
-                                .keyboardType(.phonePad)
-                                .focused($focusedField, equals: .phone)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
+                            Text("账号登录")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
 
-                            SecureField("移动爱家密码", text: passwordBinding)
-                                .textContentType(.password)
-                                .focused($focusedField, equals: .password)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
+                            LoginField(icon: "person.fill") {
+                                TextField("移动手机号", text: $model.phone)
+                                    .textContentType(.telephoneNumber)
+                                    .keyboardType(.phonePad)
+                                    .focused($focusedField, equals: .phone)
+                            }
+
+                            LoginField(icon: "lock.fill") {
+                                SecureField("移动爱家密码", text: passwordBinding)
+                                    .textContentType(.password)
+                                    .focused($focusedField, equals: .password)
+                            }
 
                             Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
@@ -241,7 +288,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
+                                    Text(model.isLoading ? "正在登录…" : "登录")
                                         .font(.headline)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -264,11 +311,30 @@ private struct LoginView: View {
                     Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(AppTheme.accent)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(AppTheme.softAccent))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("本机直连云端")
+                                .font(.subheadline.weight(.semibold))
+                            Text("视频由 iPhone 本机解码，不经过中转服务器")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                            .fill(AppTheme.softAccent)
+                    )
                 }
                 .padding(20)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -305,6 +371,33 @@ private struct LoginView: View {
                 }
             }
         }
+    }
+}
+
+private struct LoginField<Content: View>: View {
+    let icon: String
+    let content: Content
+
+    init(icon: String, @ViewBuilder content: () -> Content) {
+        self.icon = icon
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(AppTheme.softAccent))
+            content
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
     }
 }
 
@@ -450,6 +543,20 @@ private struct AboutView: View {
                 .padding(.vertical, 4)
             }
 
+            Section("外观模式") {
+                Picker("外观模式", selection: $theme.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Label(appearance.title, systemImage: appearance.icon)
+                            .tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("跟随系统会随 iPhone 的浅色或深色模式自动切换。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("项目介绍") {
                 Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并在 iPhone 本机解码播放实时与内存卡回放视频。")
             }
@@ -510,7 +617,7 @@ private struct PlayerScreen: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
                                 .font(.title3.weight(.semibold))
-                            Text(model.isLoading ? "正在连接云端…" : "移动爱家摄像头")
+                            Text(model.isLoading ? "正在连接云端…" : "在线 · \(model.networkSpeedText)")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -553,13 +660,26 @@ private struct PlayerScreen: View {
                             }
                         }
 
-                        Button(role: .destructive) {
-                            model.stop()
-                        } label: {
-                            Label(model.isReplay ? "停止回放" : "停止播放", systemImage: "stop.fill")
-                                .frame(maxWidth: .infinity)
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(model.isPlaying ? AppTheme.accent : Color.secondary)
+                                .frame(width: 8, height: 8)
+                            Text(model.isPlaying ? "直播稳定 · HEVC" : "直播已暂停")
+                                .font(.caption.weight(.semibold))
+                            Spacer()
+                            Button("停止") {
+                                DiagnosticsLogger.shared.info("UI", "用户点击直播状态栏停止按钮")
+                                model.stop()
+                            }
+                            .font(.caption.weight(.semibold))
                         }
-                        .buttonStyle(.bordered)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .foregroundStyle(model.isPlaying ? AppTheme.accent : Color.secondary)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(AppTheme.softAccent)
+                        )
                     } else {
                         VStack(spacing: 12) {
                             Image(systemName: model.hasError ? "wifi.exclamationmark" : "video")
@@ -618,7 +738,6 @@ private struct PlayerScreen: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("播放")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -678,6 +797,9 @@ private struct PlayerScreen: View {
             ScreenOrientation.restorePortrait()
         }) {
             FullscreenPlayerView(model: model)
+        }
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示直播主页 camera=\(DiagnosticsLogger.maskIdentifier(model.selectedCameraID))")
         }
     }
 }
@@ -1056,9 +1178,14 @@ private struct PTZControlPanel: View {
     var body: some View {
         AppTheme.card {
             VStack(spacing: 14) {
-                Text("云台控制")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Text("云台控制")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("按一下移动")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 VStack(spacing: 10) {
                     PTZDirectionButton(direction: .up, model: model)
@@ -1069,6 +1196,7 @@ private struct PTZControlPanel: View {
                         Image(systemName: "camera.metering.center.weighted")
                             .foregroundStyle(.secondary)
                             .frame(width: 56, height: 44)
+                            .background(Circle().fill(Color(.tertiarySystemFill)))
 
                         PTZDirectionButton(direction: .right, model: model)
                     }
@@ -1093,10 +1221,9 @@ private struct PTZDirectionButton: View {
             Image(systemName: direction.systemImage)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AppTheme.accent)
-                .frame(width: 52, height: 44)
+                .frame(width: 44, height: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
+                    Circle().fill(AppTheme.softAccent)
                 )
         }
         .buttonStyle(.plain)
