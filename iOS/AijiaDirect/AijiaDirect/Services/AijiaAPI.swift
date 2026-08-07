@@ -682,10 +682,13 @@ final class AijiaAPI: AijiaAPIClient {
     ///
     /// Verified against the official binary and by live probing: the IDMP
     /// SMS login is `POST base/user/tokenvalidate` with `{token:
-    /// <validateCode>, userPhone: <phone>}`. An invalid code returns
+    /// <validateCode>, userPhone: <phone>}` plus the device identity fields
+    /// (`deviceUuid`, `idfv`, `phoneID`, `openUdid`, `isWifi`) that follow
+    /// the endpoint in the official strings table. An invalid code returns
     /// `5101007 验证码失效请重新获取` (parameter errors return `5100000`,
-    /// missing session `5101001`), and a valid code returns the base session
-    /// (passId + sessionId) used by the video-service login.
+    /// rate limiting `2202033`, missing session `5101001`), and a valid code
+    /// returns the base session (passId + sessionId) used by the
+    /// video-service login.
     private func loginBaseWithSmsCode() async throws {
         logger.info("API", "开始验证码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
         guard let smsCode = smsCode, !smsCode.isEmpty else {
@@ -695,6 +698,13 @@ final class AijiaAPI: AijiaAPIClient {
         let body: [String: Any] = [
             "token": smsCode,
             "userPhone": phone,
+            "deviceUuid": deviceID,
+            "idfv": deviceID,
+            "phoneID": deviceID,
+            "openUdid": "",
+            "isWifi": "1",
+            "provCode": userSelectedProvCode,
+            "cityCode": userSelectedCityCode,
         ]
 
         var request = URLRequest(url: Self.smsCodeLoginURL)
