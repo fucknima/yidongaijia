@@ -11,10 +11,6 @@ import Security
 import Darwin
 #endif
 
-#if canImport(CommonCrypto)
-import CommonCrypto
-#endif
-
 struct AijiaCamera: Identifiable, Codable {
     let id: String
     let name: String
@@ -178,44 +174,6 @@ enum AijiaSigning {
         return md5(ordered + path + videoSignKey)
     }
 
-    /// AES-128-ECB (PKCS7) encryption with the key extracted from the
-    /// official binary; used for the IDMP `phoneNumber` field.
-    static func officialEncryptedPhone(_ value: String) throws -> String {
-#if canImport(CommonCrypto)
-        let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
-        let inputBytes = Array(value.utf8)
-        var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
-        let outputCapacity = outputBytes.count
-        var outputLength = 0
-
-        let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
-            inputBytes.withUnsafeBytes { inputBuffer in
-                outputBytes.withUnsafeMutableBytes { outputBuffer in
-                    CCCrypt(
-                        CCOperation(kCCEncrypt),
-                        CCAlgorithm(kCCAlgorithmAES),
-                        CCOptions(kCCOptionPKCS7Padding | kCCOptionECBMode),
-                        keyBuffer.baseAddress,
-                        kCCKeySizeAES128,
-                        nil,
-                        inputBuffer.baseAddress,
-                        inputBytes.count,
-                        outputBuffer.baseAddress,
-                        outputCapacity,
-                        &outputLength
-                    )
-                }
-            }
-        }
-        guard status == kCCSuccess else {
-            throw AijiaAPIError.invalidResponse
-        }
-        return Data(outputBytes[..<outputLength]).base64EncodedString()
-#else
-        throw AijiaAPIError.invalidResponse
-#endif
-    }
-
     static func normalized(_ value: String) -> String {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
@@ -248,16 +206,17 @@ final class AijiaAPI: AijiaAPIClient {
     // probing: accepts JSON {phoneNumber, type: "login", phoneBrand,
     // phoneModel} without a session and returns code 1000000.
     private static let sendSmsCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
-    private static let smsCodeLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
+    // Verified by live probing: POST base/user/tokenvalidate with
+    // {token: <validateCode>, userPhone: <phone>} performs the IDMP SMS
+    // login; an invalid code returns 5101007.
+    private static let smsCodeLoginURL = URL(string: "https://base.hjq.komect.com/base/user/tokenvalidate")!
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
     private static let successfulResponseCodes: Set<String> = ["0", "1000000"]
-    // Reverse-engineered from the official binary (IDMP SMS request).
-    private static let officialIDMPAppID = "01010810"
-    private static let officialSMSSourceID = "010108"
+    // Verified from the official HYAppPasswordLoginService SMS request.
     private static let officialPhoneBrand = "苹果"
 
     private let phone: String
@@ -690,6 +649,7 @@ final class AijiaAPI: AijiaAPIClient {
     /// `{phoneNumber, type: "login", phoneBrand, phoneModel}` returns
     /// `1000000` and delivers the SMS without requiring a session. The
     /// form-encoded `userAccount` variant is rejected with `5000001`.
+    /// Note: a successful response carries `data: null`; only the code matters.
     func sendSmsCode() async throws {
         guard !phone.isEmpty else {
             throw AijiaAPIError.server(action: "发送验证码", message: "缺少手机号")
@@ -710,22 +670,22 @@ final class AijiaAPI: AijiaAPIClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (payload, response) = try await requestJSONWithResponse(request)
-        let data = try requireData(in: payload, action: "发送验证码")
+        try requireSuccess(in: payload, action: "发送验证码")
         let cookie = sessionCookie(from: response)
         if !cookie.isEmpty {
             hjqToken = cookie
         }
-        logger.info("API", "验证码发送成功 data=\(DiagnosticsLogger.jsonSummary(data))")
+        logger.info("API", "验证码发送成功")
     }
 
-    /// Logs in with phone number + SMS verification code through the same
-    /// uniAuth gateway used by the official app.
+    /// Logs in with phone number + SMS verification code.
     ///
-    /// The official binary pairs this with an AES-encrypted `phoneNumber`
-    /// (key `CMCCHY1343CLKEBZ`, AES-128-ECB) plus the IDMP app/source
-    /// identifiers. The endpoint requires an established base session
-    /// (`5101001 session校验失败` otherwise); any session cookie captured by
-    /// `sendSmsCode()` is forwarded here.
+    /// Verified against the official binary and by live probing: the IDMP
+    /// SMS login is `POST base/user/tokenvalidate` with `{token:
+    /// <validateCode>, userPhone: <phone>}`. An invalid code returns
+    /// `5101007 验证码失效请重新获取` (parameter errors return `5100000`,
+    /// missing session `5101001`), and a valid code returns the base session
+    /// (passId + sessionId) used by the video-service login.
     private func loginBaseWithSmsCode() async throws {
         logger.info("API", "开始验证码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
         guard let smsCode = smsCode, !smsCode.isEmpty else {
@@ -733,25 +693,13 @@ final class AijiaAPI: AijiaAPIClient {
         }
 
         let body: [String: Any] = [
-            "phoneNumber": try AijiaSigning.officialEncryptedPhone(phone),
-            "smsCode": smsCode,
-            "appId": Self.officialIDMPAppID,
-            "appid": Self.officialIDMPAppID,
-            "provCode": userSelectedProvCode,
-            "deviceUuid": deviceID,
-            "openUdid": "",
-            "sourceId": Self.officialSMSSourceID,
-            "phoneBrand": Self.officialPhoneBrand,
-            "phoneModel": phoneModel,
-            "loginType": "UNIAUTH_PASSWORD",
+            "token": smsCode,
+            "userPhone": phone,
         ]
 
         var request = URLRequest(url: Self.smsCodeLoginURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if !hjqToken.isEmpty {
-            request.setValue("JSESSIONID=\(hjqToken)", forHTTPHeaderField: "Cookie")
-        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (payload, response) = try await requestJSONWithResponse(request)
@@ -771,10 +719,11 @@ final class AijiaAPI: AijiaAPIClient {
 
         let passID = stringValue(dataDictionary["passId"])
         let cookie = sessionCookie(from: response)
-        // The official WeChat-bound flow returns the session inside the JSON
-        // body (sessionId) instead of a Set-Cookie header; that value is used
-        // as the base session cookie for the video-service login.
+        // The official flows return the session inside the JSON body
+        // (sessionId / jsessionId) instead of a Set-Cookie header; that value
+        // is used as the base session cookie for the video-service login.
         let bodySession = stringValue(dataDictionary["sessionId"])
+            .isEmpty ? stringValue(dataDictionary["jsessionId"]) : stringValue(dataDictionary["sessionId"])
         let effectiveCookie = cookie.isEmpty ? bodySession : cookie
 
         guard !passID.isEmpty, !effectiveCookie.isEmpty else {
