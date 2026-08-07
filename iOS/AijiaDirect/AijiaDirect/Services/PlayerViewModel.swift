@@ -13,6 +13,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     @Published var phone = ""
     @Published var password = ""
+    @Published var smsCode = ""
+    @Published var isSmsLogin = false
+    @Published private(set) var smsCountdown = 0
+    @Published private(set) var isSendingSms = false
     @Published var cameraSelector = ""
     @Published var rememberLogin = true
     @Published private(set) var status = "请输入移动爱家账号"
@@ -40,6 +44,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private var api: AijiaAPIClient?
     private var player: IJKFFMoviePlayerController?
+    private var smsCountdownTimer: Timer?
     private var replayPlaybackStartTime: Int64?
     private var replaySeekTask: Task<Void, Never>?
     private var replaySeekGeneration = 0
@@ -74,12 +79,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private var loadStateObserver: NSObjectProtocol?
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
-    private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
+    private let makeAPIClient: (String, String?, String?, String) -> AijiaAPIClient
 
     init(
         credentialStore: CredentialStoring = CredentialStore.shared,
-        makeAPIClient: @escaping (String, String?, String) -> AijiaAPIClient = {
-            AijiaAPI(phone: $0, password: $1, cameraSelector: $2)
+        makeAPIClient: @escaping (String, String?, String?, String) -> AijiaAPIClient = {
+            AijiaAPI(phone: $0, password: $1, smsCode: $2, cameraSelector: $3)
         }
     ) {
         self.credentialStore = credentialStore
@@ -107,6 +112,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     deinit {
+        smsCountdownTimer?.invalidate()
         let center = NotificationCenter.default
         if let observer = playbackStateObserver {
             center.removeObserver(observer)
@@ -159,15 +165,15 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     func start(allowCurrentCameraWhenNotRemembered: Bool = false) {
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
-        let credentialIsMissing = password.isEmpty
+        let credentialIsMissing = isSmsLogin ? smsCode.isEmpty : password.isEmpty
         guard !trimmedPhone.isEmpty, !credentialIsMissing else {
-            status = "请填写手机号和密码"
+            status = isSmsLogin ? "请填写手机号和验证码" : "请填写手机号和密码"
             hasError = true
-            logger.warning("AUTH", "登录被阻止，账号或密码为空")
+            logger.warning("AUTH", "登录被阻止，账号或凭据为空")
             return
         }
 
-        logger.info("PLAYER", "用户发起连接 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+        logger.info("PLAYER", "用户发起连接 account=\(DiagnosticsLogger.maskPhone(trimmedPhone)) mode=\(isSmsLogin ? "smsCode" : "password")")
         didUserLogout = false
         let operationID = beginPlaybackOperation()
         cancelRecordingsQuery()
@@ -175,8 +181,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
         isReplay = false
         resetReplayPlaybackState()
         stopPlaybackOnly()
-        let loginPassword = password
-        let shouldRememberLogin = rememberLogin
+        let loginPassword = isSmsLogin ? nil : password
+        let loginSmsCode = isSmsLogin ? smsCode : nil
+        let shouldRememberLogin = rememberLogin && !isSmsLogin
         let selectedCamera = (!shouldRememberLogin && !allowCurrentCameraWhenNotRemembered) ? "" : cameraSelector
         if !shouldRememberLogin {
             credentialStore.clear()
@@ -186,7 +193,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 "用户未选择记住登录，开始登录前清除本地保存信息 account=\(DiagnosticsLogger.maskPhone(trimmedPhone)) useCurrentCamera=\(allowCurrentCameraWhenNotRemembered)"
             )
         }
-        let client = makeAPIClient(trimmedPhone, loginPassword, selectedCamera)
+        let client = makeAPIClient(trimmedPhone, loginPassword, loginSmsCode, selectedCamera)
         api = client
         shouldPlay = true
         isLoading = true
@@ -295,13 +302,56 @@ final class PlayerViewModel: NSObject, ObservableObject {
         logger.info("PLAYER", "用户选择摄像头并准备播放 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
         cameraSelector = camera.macID
         selectedCameraID = camera.macID
-        guard rememberLogin, !phone.isEmpty, !password.isEmpty else {
+        guard rememberLogin, !phone.isEmpty, !password.isEmpty, !isSmsLogin else {
             start(allowCurrentCameraWhenNotRemembered: true)
             return
         }
         _ = credentialStore.save(phone: phone.trimmingCharacters(in: .whitespacesAndNewlines), password: password, cameraSelector: camera.macID)
         credentialStore.setAutoConnectEnabled(true)
         start()
+    }
+
+    /// Requests an SMS verification code for the current phone number.
+    func sendSmsCode() {
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPhone.isEmpty, !isSendingSms, smsCountdown <= 0 else { return }
+
+        isSendingSms = true
+        status = "正在发送验证码…"
+        hasError = false
+        logger.info("AUTH", "请求发送短信验证码 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
+
+        let client = AijiaAPI(phone: trimmedPhone, password: nil, smsCode: nil, cameraSelector: "")
+        Task { [weak self] in
+            do {
+                try await client.sendSmsCode()
+                guard let self = self else { return }
+                self.isSendingSms = false
+                self.status = "验证码已发送，请查收短信"
+                self.hasError = false
+                self.startSmsCountdown()
+            } catch {
+                guard let self = self else { return }
+                self.isSendingSms = false
+                self.status = "验证码发送失败：\(error.localizedDescription)"
+                self.hasError = true
+                self.logger.error("AUTH", "验证码发送失败 error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func startSmsCountdown() {
+        smsCountdownTimer?.invalidate()
+        smsCountdown = 60
+        smsCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            if self.smsCountdown > 0 {
+                self.smsCountdown -= 1
+            } else {
+                self.smsCountdownTimer?.invalidate()
+                self.smsCountdownTimer = nil
+            }
+        }
     }
 
     func consumeCameraSelectionPrompt() {

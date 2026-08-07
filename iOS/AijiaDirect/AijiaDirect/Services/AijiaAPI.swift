@@ -202,6 +202,8 @@ protocol AijiaAPIClient: AnyObject {
 
 final class AijiaAPI: AijiaAPIClient {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
+    private static let sendSmsCodeURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/sendSmsCode")!
+    private static let smsCodeLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
@@ -211,6 +213,7 @@ final class AijiaAPI: AijiaAPIClient {
 
     private let phone: String
     private let password: String?
+    private let smsCode: String?
     private var cameraSelector: String
     // Persist a stable device UUID for the base and video sessions.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
@@ -229,16 +232,15 @@ final class AijiaAPI: AijiaAPIClient {
     private let hardwareModel = AijiaDeviceIdentity.hardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
 
-    // Keep a single initializer after removing SMS login. A same-label
-    // convenience initializer would resolve its self.init(...) call back to
-    // itself and compile into a non-returning self-loop on device.
     init(
         phone: String,
         password: String?,
+        smsCode: String?,
         cameraSelector: String
     ) {
         self.phone = phone
         self.password = password
+        self.smsCode = smsCode
         self.cameraSelector = AijiaSigning.normalized(cameraSelector)
 
         // Authentication state belongs to this client instance. A shared,
@@ -256,7 +258,7 @@ final class AijiaAPI: AijiaAPIClient {
         self.session = URLSession(configuration: configuration)
         logger.info(
             "API",
-            "初始化客户端 account=\(DiagnosticsLogger.maskPhone(phone)) cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
+            "初始化客户端 account=\(DiagnosticsLogger.maskPhone(phone)) mode=\(smsCode == nil ? "password" : "smsCode") cameraSelector=\(self.cameraSelector.isEmpty ? "<first>" : DiagnosticsLogger.maskIdentifier(self.cameraSelector))"
         )
     }
 
@@ -623,6 +625,56 @@ final class AijiaAPI: AijiaAPIClient {
         logger.info("API", "基础账号密码登录成功")
     }
 
+    /// Requests an SMS verification code for the account. The uniAuth
+    /// endpoint mirrors the official app's send-code flow; parameters may
+    /// need adjusting if the gateway rejects the minimal body.
+    func sendSmsCode() async throws {
+        guard !phone.isEmpty else {
+            throw AijiaAPIError.server(action: "发送验证码", message: "缺少手机号")
+        }
+
+        logger.info("API", "请求发送短信验证码 account=\(DiagnosticsLogger.maskPhone(phone))")
+        let body: [String: Any] = [
+            "userAccount": phone,
+        ]
+
+        var request = URLRequest(url: Self.sendSmsCodeURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (payload, response) = try await requestJSONWithResponse(request)
+        let data = try requireData(in: payload, action: "发送验证码")
+        let cookie = sessionCookie(from: response)
+        if !cookie.isEmpty {
+            hjqToken = cookie
+        }
+        logger.info("API", "验证码发送成功 data=\(DiagnosticsLogger.jsonSummary(data))")
+    }
+
+    /// Logs in with phone number + SMS verification code through the same
+    /// uniAuth gateway used by the official app.
+    private func loginBaseWithSmsCode() async throws {
+        logger.info("API", "开始验证码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
+        guard let smsCode = smsCode, !smsCode.isEmpty else {
+            throw AijiaAPIError.server(action: "登录", message: "缺少验证码")
+        }
+
+        let body: [String: Any] = [
+            "userAccount": phone,
+            "validateCode": smsCode,
+        ]
+
+        var request = URLRequest(url: Self.smsCodeLoginURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (payload, response) = try await requestJSONWithResponse(request)
+        try completeBaseLogin(payload: payload, response: response, action: "登录")
+        logger.info("API", "验证码登录成功")
+    }
+
     private func completeBaseLogin(
         payload: [String: Any],
         response: HTTPURLResponse,
@@ -702,7 +754,11 @@ final class AijiaAPI: AijiaAPIClient {
     private func loginVideo() async throws {
         logger.info("API", "开始视频服务登录")
         if hjqToken.isEmpty || passID.isEmpty {
-            try await loginBaseWithPassword()
+            if smsCode != nil {
+                try await loginBaseWithSmsCode()
+            } else {
+                try await loginBaseWithPassword()
+            }
         }
 
         let timestamp = currentTimestamp()

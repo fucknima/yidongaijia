@@ -184,6 +184,14 @@ private struct LoginView: View {
     private enum Field: Hashable {
         case phone
         case password
+        case smsCode
+    }
+
+    private var smsButtonTitle: String {
+        if model.smsCountdown > 0 {
+            return "\(model.smsCountdown)s"
+        }
+        return model.isSendingSms ? "发送中…" : "获取验证码"
     }
 
     var body: some View {
@@ -204,6 +212,12 @@ private struct LoginView: View {
 
                     AppTheme.card {
                         VStack(spacing: 14) {
+                            Picker("登录方式", selection: $model.isSmsLogin) {
+                                Text("密码登录").tag(false)
+                                Text("验证码登录").tag(true)
+                            }
+                            .pickerStyle(.segmented)
+
                             TextField("移动手机号", text: $model.phone)
                                 .textContentType(.telephoneNumber)
                                 .keyboardType(.phonePad)
@@ -214,18 +228,45 @@ private struct LoginView: View {
                                         .fill(Color(.secondarySystemBackground))
                                 )
 
-                            SecureField("移动爱家密码", text: passwordBinding)
-                                .textContentType(.password)
-                                .focused($focusedField, equals: .password)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
+                            if model.isSmsLogin {
+                                HStack(spacing: 10) {
+                                    TextField("短信验证码", text: $model.smsCode)
+                                        .keyboardType(.numberPad)
+                                        .focused($focusedField, equals: .smsCode)
+                                        .padding(14)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(Color(.secondarySystemBackground))
+                                        )
 
-                            Toggle("记住登录信息", isOn: $model.rememberLogin)
-                                .font(.subheadline)
-                                .padding(.horizontal, 2)
+                                    Button {
+                                        focusedField = nil
+                                        model.sendSmsCode()
+                                    } label: {
+                                        Text(smsButtonTitle)
+                                            .font(.subheadline.weight(.medium))
+                                            .frame(width: 92, height: 46)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(AppTheme.accent)
+                                    .disabled(model.isSendingSms || model.smsCountdown > 0)
+                                }
+                            } else {
+                                SecureField("移动爱家密码", text: passwordBinding)
+                                    .textContentType(.password)
+                                    .focused($focusedField, equals: .password)
+                                    .padding(14)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
+                            }
+
+                            if !model.isSmsLogin {
+                                Toggle("记住登录信息", isOn: $model.rememberLogin)
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 2)
+                            }
 
                             Button {
                                 focusedField = nil
@@ -247,7 +288,7 @@ private struct LoginView: View {
                             .disabled(
                                 model.isLoading ||
                                 model.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                model.password.isEmpty
+                                (model.isSmsLogin ? model.smsCode.isEmpty : model.password.isEmpty)
                             )
                         }
                     }
@@ -256,7 +297,9 @@ private struct LoginView: View {
                         StatusText(model: model)
                     }
 
-                    Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
+                    Text(model.isSmsLogin
+                         ? "验证码登录不会保存登录信息，验证码仅用于本次登录。"
+                         : "密码只保存在本机钥匙串，不会上传到其他服务器。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

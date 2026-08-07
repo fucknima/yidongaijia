@@ -152,7 +152,7 @@ final class AijiaDirectTests: XCTestCase {
         )
         let model = PlayerViewModel(
             credentialStore: credentialStore,
-            makeAPIClient: { _, _, _ in apiClient }
+            makeAPIClient: { _, _, _, _ in apiClient }
         )
         model.phone = " 13800138000 "
         model.password = "password"
@@ -177,7 +177,7 @@ final class AijiaDirectTests: XCTestCase {
         let apiClient = StubAijiaAPIClient(openStreamResult: .failure(StubAPIError.failed))
         let model = PlayerViewModel(
             credentialStore: credentialStore,
-            makeAPIClient: { _, _, _ in apiClient }
+            makeAPIClient: { _, _, _, _ in apiClient }
         )
         model.phone = "13800138000"
         model.password = "password"
@@ -198,7 +198,7 @@ final class AijiaDirectTests: XCTestCase {
         // player exists, mounting hosts must be a no-op that never crashes.
         let model = PlayerViewModel(
             credentialStore: StubCredentialStore(),
-            makeAPIClient: { _, _, _ in
+            makeAPIClient: { _, _, _, _ in
                 StubAijiaAPIClient(openStreamResult: .failure(StubAPIError.failed))
             }
         )
