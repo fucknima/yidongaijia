@@ -315,7 +315,7 @@ private struct LoginView: View {
                                     path.move(to: CGPoint(x: 25, y: -8.5))
                                     path.addLine(to: CGPoint(x: 41, y: -17.5))
                                     path.addLine(to: CGPoint(x: 41, y: 18.5))
-                                    path.close()
+                                    path.closeSubpath()
                                 }
                                 .fill(.white)
                             }
@@ -1761,7 +1761,7 @@ private struct HistoryView: View {
                 .padding(.bottom, 32)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarHidden(true)
         // 返回 ‹:x=26 baseline y=88 30pt
         .overlay(alignment: .topLeading) {
             Button {
@@ -2157,7 +2157,7 @@ private struct MediaLibraryView: View {
                 .padding(.bottom, 32)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarHidden(true)
         // "完成" x=26 baseline y=88 15pt Semibold
         .overlay(alignment: .topLeading) {
             Button("完成") {
