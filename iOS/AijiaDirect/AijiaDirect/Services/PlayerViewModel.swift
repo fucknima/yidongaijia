@@ -227,7 +227,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                     if shouldRememberLogin {
                         if credentialStore.save(
                             phone: trimmedPhone,
-                            password: loginPassword,
+                            password: loginPassword ?? "",
                             cameraSelector: ""
                         ) {
                             hasSavedLogin = true
@@ -263,7 +263,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 if shouldRememberLogin {
                     if credentialStore.save(
                         phone: trimmedPhone,
-                        password: loginPassword,
+                        password: loginPassword ?? "",
                         cameraSelector: self.cameraSelector
                     ) {
                         hasSavedLogin = true
