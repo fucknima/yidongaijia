@@ -2,9 +2,16 @@ import Foundation
 import UIKit
 
 struct MediaItem: Identifiable {
-    enum Kind {
+    enum Kind: Equatable {
         case image
         case video
+
+        var logValue: String {
+            switch self {
+            case .image: return "image"
+            case .video: return "video"
+            }
+        }
     }
 
     let url: URL
