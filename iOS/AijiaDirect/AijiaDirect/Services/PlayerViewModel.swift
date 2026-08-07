@@ -80,6 +80,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String?, String) -> AijiaAPIClient
+    /// Retained send-code client so the SMS login reuses the same base
+    /// session (cookie) that issued the verification code.
+    private var smsSessionClient: AijiaAPIClient?
 
     init(
         credentialStore: CredentialStoring = CredentialStore.shared,
@@ -193,7 +196,16 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 "用户未选择记住登录，开始登录前清除本地保存信息 account=\(DiagnosticsLogger.maskPhone(trimmedPhone)) useCurrentCamera=\(allowCurrentCameraWhenNotRemembered)"
             )
         }
-        let client = makeAPIClient(trimmedPhone, loginPassword, loginSmsCode, selectedCamera)
+        // Reuse the retained send-code client for SMS login so the base
+        // session that issued the verification code is presented at login.
+        let client: AijiaAPIClient
+        if isSmsLogin, let retained = smsSessionClient as? AijiaAPI,
+           retained.account == trimmedPhone, let code = loginSmsCode {
+            retained.setSmsCode(code)
+            client = retained
+        } else {
+            client = makeAPIClient(trimmedPhone, loginPassword, loginSmsCode, selectedCamera)
+        }
         api = client
         shouldPlay = true
         isLoading = true
@@ -312,6 +324,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     /// Requests an SMS verification code for the current phone number.
+    /// The client is retained so the base session (and any session cookie)
+    /// issued for this phone is reused by the later SMS login.
     func sendSmsCode() {
         let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPhone.isEmpty, !isSendingSms, smsCountdown <= 0 else { return }
@@ -322,6 +336,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         logger.info("AUTH", "请求发送短信验证码 account=\(DiagnosticsLogger.maskPhone(trimmedPhone))")
 
         let client = AijiaAPI(phone: trimmedPhone, password: nil, smsCode: nil, cameraSelector: "")
+        smsSessionClient = client
         Task { [weak self] in
             do {
                 try await client.sendSmsCode()

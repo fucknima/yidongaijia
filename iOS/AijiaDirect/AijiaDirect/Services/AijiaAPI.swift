@@ -11,6 +11,10 @@ import Security
 import Darwin
 #endif
 
+#if canImport(CommonCrypto)
+import CommonCrypto
+#endif
+
 struct AijiaCamera: Identifiable, Codable {
     let id: String
     let name: String
@@ -174,6 +178,43 @@ enum AijiaSigning {
         return md5(ordered + path + videoSignKey)
     }
 
+    /// AES-128-ECB (PKCS7) encryption with the key extracted from the
+    /// official binary; used for the IDMP `phoneNumber` field.
+    static func officialEncryptedPhone(_ value: String) throws -> String {
+#if canImport(CommonCrypto)
+        let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
+        let inputBytes = Array(value.utf8)
+        var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
+        var outputLength = 0
+
+        let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
+            inputBytes.withUnsafeBytes { inputBuffer in
+                outputBytes.withUnsafeMutableBytes { outputBuffer in
+                    CCCrypt(
+                        CCOperation(kCCEncrypt),
+                        CCAlgorithm(kCCAlgorithmAES),
+                        CCOptions(kCCOptionPKCS7Padding | kCCOptionECBMode),
+                        keyBuffer.baseAddress,
+                        kCCKeySizeAES128,
+                        nil,
+                        inputBuffer.baseAddress,
+                        inputBytes.count,
+                        outputBuffer.baseAddress,
+                        outputBytes.count,
+                        &outputLength
+                    )
+                }
+            }
+        }
+        guard status == kCCSuccess else {
+            throw AijiaAPIError.invalidResponse
+        }
+        return Data(outputBytes[..<outputLength]).base64EncodedString()
+#else
+        throw AijiaAPIError.invalidResponse
+#endif
+    }
+
     static func normalized(_ value: String) -> String {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
@@ -202,10 +243,9 @@ protocol AijiaAPIClient: AnyObject {
 
 final class AijiaAPI: AijiaAPIClient {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
-    // Reverse-engineered send-code endpoint. Unlike user/uniAuth/sendSmsCode
-    // (which rejects with 5101001 "session校验失败" without a session) this
-    // one passes gateway validation without a session; exact parameters still
-    // need confirmation via packet capture of the official app.
+    // Verified via the official binary (HYGetAppValidateCodeService) and live
+    // probing: accepts JSON {phoneNumber, type: "login", phoneBrand,
+    // phoneModel} without a session and returns code 1000000.
     private static let sendSmsCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
     private static let smsCodeLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let defaultProvCode = "57"
@@ -214,10 +254,14 @@ final class AijiaAPI: AijiaAPIClient {
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
     private static let successfulResponseCodes: Set<String> = ["0", "1000000"]
+    // Reverse-engineered from the official binary (IDMP SMS request).
+    private static let officialIDMPAppID = "01010810"
+    private static let officialSMSSourceID = "010108"
+    private static let officialPhoneBrand = "苹果"
 
     private let phone: String
     private let password: String?
-    private let smsCode: String?
+    private var smsCode: String?
     private var cameraSelector: String
     // Persist a stable device UUID for the base and video sessions.
     private let deviceID = AijiaDeviceIdentity.persistentDeviceUUID()
@@ -233,6 +277,7 @@ final class AijiaAPI: AijiaAPIClient {
 
     // The base SDK uses the human-readable iphoneType (for example,
     // iPhone17,1 -> iPhone 16 Pro) while the video headers use hw.machine.
+    private let phoneModel = AijiaDeviceIdentity.phoneModel()
     private let hardwareModel = AijiaDeviceIdentity.hardwareModel()
     private let osVersion = aijiaOperatingSystemVersion()
 
@@ -270,6 +315,14 @@ final class AijiaAPI: AijiaAPIClient {
         if videoToken.isEmpty {
             try await loginVideo()
         }
+    }
+
+    /// Reuses a retained send-code client for the SMS login so the base
+    /// session that issued the code is presented at login time.
+    var account: String { phone }
+
+    func setSmsCode(_ code: String) {
+        smsCode = code
     }
 
     func cameras() async throws -> [AijiaCamera] {
@@ -629,9 +682,13 @@ final class AijiaAPI: AijiaAPIClient {
         logger.info("API", "基础账号密码登录成功")
     }
 
-    /// Requests an SMS verification code for the account. The endpoint and
-    /// parameters are reverse-engineered from the official app; this may need
-    /// adjustment once the real request is captured (see diagnostics logs).
+    /// Requests an SMS verification code for the account.
+    ///
+    /// Verified against the official binary (HYGetAppValidateCodeService) and
+    /// by live probing: `POST base/authentication/sendMsg` with JSON body
+    /// `{phoneNumber, type: "login", phoneBrand, phoneModel}` returns
+    /// `1000000` and delivers the SMS without requiring a session. The
+    /// form-encoded `userAccount` variant is rejected with `5000001`.
     func sendSmsCode() async throws {
         guard !phone.isEmpty else {
             throw AijiaAPIError.server(action: "发送验证码", message: "缺少手机号")
@@ -639,15 +696,17 @@ final class AijiaAPI: AijiaAPIClient {
 
         logger.info("API", "请求发送短信验证码 account=\(DiagnosticsLogger.maskPhone(phone))")
 
-        var components = URLComponents()
-        components.queryItems = [
-            URLQueryItem(name: "userAccount", value: phone),
+        let body: [String: Any] = [
+            "phoneNumber": phone,
+            "type": "login",
+            "phoneBrand": Self.officialPhoneBrand,
+            "phoneModel": phoneModel,
         ]
 
         var request = URLRequest(url: Self.sendSmsCodeURL)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data((components.percentEncodedQuery ?? "").utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (payload, response) = try await requestJSONWithResponse(request)
         let data = try requireData(in: payload, action: "发送验证码")
@@ -660,6 +719,12 @@ final class AijiaAPI: AijiaAPIClient {
 
     /// Logs in with phone number + SMS verification code through the same
     /// uniAuth gateway used by the official app.
+    ///
+    /// The official binary pairs this with an AES-encrypted `phoneNumber`
+    /// (key `CMCCHY1343CLKEBZ`, AES-128-ECB) plus the IDMP app/source
+    /// identifiers. The endpoint requires an established base session
+    /// (`5101001 session校验失败` otherwise); any session cookie captured by
+    /// `sendSmsCode()` is forwarded here.
     private func loginBaseWithSmsCode() async throws {
         logger.info("API", "开始验证码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
         guard let smsCode = smsCode, !smsCode.isEmpty else {
@@ -667,13 +732,25 @@ final class AijiaAPI: AijiaAPIClient {
         }
 
         let body: [String: Any] = [
-            "userAccount": phone,
-            "validateCode": smsCode,
+            "phoneNumber": try AijiaSigning.officialEncryptedPhone(phone),
+            "smsCode": smsCode,
+            "appId": Self.officialIDMPAppID,
+            "appid": Self.officialIDMPAppID,
+            "provCode": userSelectedProvCode,
+            "deviceUuid": deviceID,
+            "openUdid": "",
+            "sourceId": Self.officialSMSSourceID,
+            "phoneBrand": Self.officialPhoneBrand,
+            "phoneModel": phoneModel,
+            "loginType": "UNIAUTH_PASSWORD",
         ]
 
         var request = URLRequest(url: Self.smsCodeLoginURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !hjqToken.isEmpty {
+            request.setValue("JSESSIONID=\(hjqToken)", forHTTPHeaderField: "Cookie")
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (payload, response) = try await requestJSONWithResponse(request)
@@ -693,13 +770,18 @@ final class AijiaAPI: AijiaAPIClient {
 
         let passID = stringValue(dataDictionary["passId"])
         let cookie = sessionCookie(from: response)
+        // The official WeChat-bound flow returns the session inside the JSON
+        // body (sessionId) instead of a Set-Cookie header; that value is used
+        // as the base session cookie for the video-service login.
+        let bodySession = stringValue(dataDictionary["sessionId"])
+        let effectiveCookie = cookie.isEmpty ? bodySession : cookie
 
-        guard !passID.isEmpty, !cookie.isEmpty else {
+        guard !passID.isEmpty, !effectiveCookie.isEmpty else {
             throw AijiaAPIError.server(action: action, message: "没有返回有效会话")
         }
 
         self.passID = passID
-        hjqToken = cookie
+        hjqToken = effectiveCookie
         let responseProvCode = stringValue(dataDictionary["provCode"])
         let responseCityCode = stringValue(dataDictionary["cityCode"])
         if !responseProvCode.isEmpty {
@@ -1177,6 +1259,31 @@ private enum AijiaDeviceIdentity {
 #else
         return "iPhone"
 #endif
+    }
+
+    /// Human-readable iphoneType used by the base-service requests (the
+    /// official HYCheckVersionService mapping; phoneModel header of the
+    /// video service uses hw.machine instead).
+    static func phoneModel() -> String {
+        let mapping: [String: String] = [
+            "iPhone14,5": "iPhone 13",
+            "iPhone14,2": "iPhone 13 Pro",
+            "iPhone14,3": "iPhone 13 Pro Max",
+            "iPhone14,4": "iPhone 13 mini",
+            "iPhone15,2": "iPhone 14 Pro",
+            "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone15,4": "iPhone 15",
+            "iPhone15,5": "iPhone 15 Plus",
+            "iPhone16,1": "iPhone 15 Pro",
+            "iPhone16,2": "iPhone 15 Pro Max",
+            "iPhone17,1": "iPhone 16 Pro",
+            "iPhone17,2": "iPhone 16 Pro Max",
+            "iPhone17,3": "iPhone 16",
+            "iPhone17,4": "iPhone 16 Plus",
+            "iPhone17,5": "iPhone 16e",
+        ]
+        let hardware = hardwareModel()
+        return mapping[hardware] ?? hardware
     }
 
 }
