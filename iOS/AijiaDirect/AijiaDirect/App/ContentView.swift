@@ -1,4 +1,4 @@
-﻿import IJKMediaFramework
+import IJKMediaFramework
 import SwiftUI
 import UIKit
 
@@ -43,7 +43,7 @@ struct ContentView: View {
 
     private func presentCameraSelectionIfNeeded() {
         guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
-        DiagnosticsLogger.shared.info("UI", "鏀跺埌鑷姩鎵撳紑鎽勫儚澶撮€夋嫨椤佃姹傦紝姝ｅ湪寮瑰嚭閫夋嫨椤?)
+        DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择页")
         model.consumeCameraSelectionPrompt()
         // Pre-warm the first camera while the user is deciding so the chosen
         // stream starts almost instantly (mirrors the official player).
@@ -70,14 +70,14 @@ private enum AppAccent: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .teal: return "闈掔豢"
-        case .blue: return "钃濊壊"
-        case .indigo: return "闈涜摑"
-        case .purple: return "绱壊"
-        case .pink: return "绮夎壊"
-        case .orange: return "姗欒壊"
-        case .green: return "缁胯壊"
-        case .red: return "绾㈣壊"
+        case .teal: return "青绿"
+        case .blue: return "蓝色"
+        case .indigo: return "靛蓝"
+        case .purple: return "紫色"
+        case .pink: return "粉色"
+        case .orange: return "橙色"
+        case .green: return "绿色"
+        case .red: return "红色"
         }
     }
 
@@ -103,7 +103,7 @@ private final class ThemeStore: ObservableObject {
     @Published var accent: AppAccent {
         didSet {
             UserDefaults.standard.set(accent.rawValue, forKey: Self.accentKey)
-            DiagnosticsLogger.shared.info("UI", "鐢ㄦ埛鍒囨崲涓婚鑹?accent=\(accent.rawValue)")
+            DiagnosticsLogger.shared.info("UI", "用户切换主题色 accent=\(accent.rawValue)")
         }
     }
 
@@ -118,24 +118,10 @@ private enum AppTheme {
         ThemeStore.shared.accent.color
     }
 
-    /// 鍝佺墝涓昏壊 #139A82(鏉ヨ嚜 Player.svg)
+    /// 品牌主色 #139A82(来自 Player.svg)
     static let brand = Color(red: 0.075, green: 0.604, blue: 0.510)
-    /// 鍝佺墝娴呭簳 #ECF8F5
+    /// 品牌浅底 #ECF8F5
     static let brandSoft = Color(red: 0.925, green: 0.973, blue: 0.961)
-    /// 鑳屾櫙 #F7F8FA
-    static let pageBackground = AppTheme.pageBackground
-    /// 杈撳叆/鎺т欢娴呯伆 #F5F7F8
-    static let fieldFill = Color(red: 0.961, green: 0.969, blue: 0.973)
-    /// 瑙嗛娓愬彉 top #25313D
-    static let videoTop = Color(red: 0.145, green: 0.192, blue: 0.239)
-    /// 瑙嗛娓愬彉 mid #111827
-    static let videoMid = Color(red: 0.067, green: 0.094, blue: 0.153)
-    /// 瑙嗛娓愬彉 bottom #0B1220
-    static let videoBottom = Color(red: 0.043, green: 0.071, blue: 0.125)
-    /// 娆＄骇鏂囧瓧 #64748B
-    static let textSecondary = AppTheme.textSecondary
-    /// 涓绘枃瀛?#0F172A
-    static let textPrimary = AppTheme.textPrimary
 
     static let cardRadius: CGFloat = 16
 
@@ -217,9 +203,9 @@ private struct LoginView: View {
                     VStack(spacing: 14) {
                         AppMark()
                         VStack(spacing: 5) {
-                            Text("鐖卞鐩磋繛")
+                            Text("爱家直连")
                                 .font(.title.weight(.bold))
-                            Text("鐧诲綍绉诲姩鐖卞璐﹀彿锛屾憚鍍忓ご鐢婚潰鍦ㄦ湰鏈鸿В鐮?)
+                            Text("登录移动爱家账号，摄像头画面在本机解码")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -228,7 +214,7 @@ private struct LoginView: View {
 
                     AppTheme.card {
                         VStack(spacing: 14) {
-                            TextField("绉诲姩鎵嬫満鍙?, text: $model.phone)
+                            TextField("移动手机号", text: $model.phone)
                                 .textContentType(.telephoneNumber)
                                 .keyboardType(.phonePad)
                                 .focused($focusedField, equals: .phone)
@@ -238,7 +224,7 @@ private struct LoginView: View {
                                         .fill(Color(.secondarySystemBackground))
                                 )
 
-                            SecureField("绉诲姩鐖卞瀵嗙爜", text: passwordBinding)
+                            SecureField("移动爱家密码", text: passwordBinding)
                                 .textContentType(.password)
                                 .focused($focusedField, equals: .password)
                                 .padding(14)
@@ -247,7 +233,7 @@ private struct LoginView: View {
                                         .fill(Color(.secondarySystemBackground))
                                 )
 
-                            Toggle("璁颁綇鐧诲綍淇℃伅", isOn: $model.rememberLogin)
+                            Toggle("记住登录信息", isOn: $model.rememberLogin)
                                 .font(.subheadline)
                                 .padding(.horizontal, 2)
 
@@ -260,7 +246,7 @@ private struct LoginView: View {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "姝ｅ湪鐧诲綍鈥? : "鐧诲綍骞舵挱鏀?)
+                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
                                         .font(.headline)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -280,14 +266,14 @@ private struct LoginView: View {
                         StatusText(model: model)
                     }
 
-                    Text("瀵嗙爜鍙繚瀛樺湪鏈満閽ュ寵涓诧紝涓嶄細涓婁紶鍒板叾浠栨湇鍔″櫒銆?)
+                    Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 .padding(20)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("鐧诲綍")
+            .navigationTitle("登录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -295,20 +281,20 @@ private struct LoginView: View {
                         Button {
                             showingAbout = true
                         } label: {
-                            Label("鍏充簬", systemImage: "info.circle")
+                            Label("关于", systemImage: "info.circle")
                         }
                         Button {
                             showingDiagnostics = true
                         } label: {
-                            Label("璇婃柇鏃ュ織", systemImage: "doc.text.magnifyingglass")
+                            Label("诊断日志", systemImage: "doc.text.magnifyingglass")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("鏇村鎿嶄綔")
+                    .accessibilityLabel("更多操作")
                 }
                 ToolbarItem(placement: .keyboard) {
-                    Button("瀹屾垚") {
+                    Button("完成") {
                         focusedField = nil
                     }
                 }
@@ -340,9 +326,9 @@ private struct CameraSelectionPage: View {
                         Image(systemName: "video.slash")
                             .font(.title2)
                             .foregroundStyle(.secondary)
-                        Text("鏆傛棤鎽勫儚澶?)
+                        Text("暂无摄像头")
                             .font(.headline)
-                        Text("璇峰厛鐧诲綍骞惰鍙栬处鍙蜂笅鐨勬憚鍍忓ご銆?)
+                        Text("请先登录并读取账号下的摄像头。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -353,7 +339,7 @@ private struct CameraSelectionPage: View {
                         Button {
                             DiagnosticsLogger.shared.info(
                                 "UI",
-                                "鐢ㄦ埛鍦ㄧ嫭绔嬫憚鍍忓ご閫夋嫨椤甸€夋嫨璁惧 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))"
+                                "用户在独立摄像头选择页选择设备 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))"
                             )
                             model.playCamera(camera)
                             dismiss()
@@ -382,23 +368,23 @@ private struct CameraSelectionPage: View {
                     }
                 }
             } header: {
-                Text("璇烽€夋嫨瑕佹挱鏀剧殑鎽勫儚澶?)
+                Text("请选择要播放的摄像头")
             }
         }
         .listStyle(.insetGrouped)
         .tint(theme.accent.color)
-        .navigationTitle("閫夋嫨鎽勫儚澶?)
+        .navigationTitle("选择摄像头")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("杩斿洖") {
-                    DiagnosticsLogger.shared.info("UI", "鐢ㄦ埛浠庣嫭绔嬫憚鍍忓ご閫夋嫨椤佃繑鍥炴挱鏀鹃〉")
+                Button("返回") {
+                    DiagnosticsLogger.shared.info("UI", "用户从独立摄像头选择页返回播放页")
                     dismiss()
                 }
             }
         }
         .onAppear {
-            DiagnosticsLogger.shared.info("UI", "鏄剧ず鐙珛鎽勫儚澶撮€夋嫨椤?count=\(model.cameras.count)")
+            DiagnosticsLogger.shared.info("UI", "显示独立摄像头选择页 count=\(model.cameras.count)")
         }
     }
 }
@@ -409,10 +395,10 @@ private struct CameraSelectionMenuButton: View {
 
     var body: some View {
         Button {
-            DiagnosticsLogger.shared.info("UI", "鐢ㄦ埛浠庢洿澶氭搷浣滄墦寮€鐙珛鎽勫儚澶撮€夋嫨椤?)
+            DiagnosticsLogger.shared.info("UI", "用户从更多操作打开独立摄像头选择页")
             isPresented = true
         } label: {
-            Label("閫夋嫨鎽勫儚澶?, systemImage: "video.badge.plus")
+            Label("选择摄像头", systemImage: "video.badge.plus")
         }
     }
 }
@@ -425,9 +411,9 @@ private struct AboutView: View {
             Section {
                 VStack(spacing: 12) {
                     AppMark()
-                    Text("鐖卞鐩磋繛")
+                    Text("爱家直连")
                         .font(.title3.weight(.bold))
-                    Text("鐗堟湰 \(AppVersionInfo.display) (\(AppVersionInfo.build))")
+                    Text("版本 \(AppVersionInfo.display) (\(AppVersionInfo.build))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -435,7 +421,7 @@ private struct AboutView: View {
                 .padding(.vertical, 16)
             }
 
-            Section("涓婚鑹?) {
+            Section("主题色") {
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4),
                     spacing: 12
@@ -463,51 +449,51 @@ private struct AboutView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("涓婚鑹瞈(accent.title)")
+                        .accessibilityLabel("主题色\(accent.title)")
                     }
                 }
                 .padding(.vertical, 4)
             }
 
-            Section("椤圭洰浠嬬粛") {
-                Text("鐖卞鐩磋繛鏄竴娆剧涓夋柟 iOS 瀹㈡埛绔紝鐩存帴鐧诲綍绉诲姩鐖卞浜戠锛岃鍙栬处鍙蜂笅鎽勫儚澶村苟鍦?iPhone 鏈満瑙ｇ爜鎾斁瀹炴椂涓庡唴瀛樺崱鍥炴斁瑙嗛銆?)
+            Section("项目介绍") {
+                Text("爱家直连是一款第三方 iOS 客户端，直接登录移动爱家云端，读取账号下摄像头并在 iPhone 本机解码播放实时与内存卡回放视频。")
             }
 
-            Section("浣滆€?) {
+            Section("作者") {
                 HStack {
-                    Text("浣滆€?)
+                    Text("作者")
                     Spacer()
                     Text("fucknima")
                         .foregroundStyle(.secondary)
                 }
                 HStack {
-                    Text("閭")
+                    Text("邮箱")
                     Spacer()
                     Link("fucknimama@icloud.com", destination: URL(string: "mailto:fucknimama@icloud.com")!)
                         .foregroundStyle(AppTheme.accent)
                 }
             }
 
-            Section("浠撳簱鍦板潃") {
+            Section("仓库地址") {
                 Link("github.com/fucknima/yidongaijia", destination: URL(string: "https://github.com/fucknima/yidongaijia")!)
             }
 
-            Section("寮€婧愯鍙?) {
-                Text("鏈」鐩熀浜?MIT License 寮€婧愶紝鍏佽鑷敱浣跨敤銆佷慨鏀逛笌鍒嗗彂銆?)
-                Text("Copyright 漏 2026 fucknima")
+            Section("开源许可") {
+                Text("本项目基于 MIT License 开源，允许自由使用、修改与分发。")
+                Text("Copyright © 2026 fucknima")
                     .foregroundStyle(.secondary)
-                Link("鏌ョ湅瀹屾暣璁稿彲鍗忚", destination: URL(string: "https://github.com/fucknima/yidongaijia/blob/main/LICENSE")!)
+                Link("查看完整许可协议", destination: URL(string: "https://github.com/fucknima/yidongaijia/blob/main/LICENSE")!)
             }
 
-            Section("鍏嶈矗澹版槑") {
-                Text("鏈」鐩槸绉诲姩鐖卞鐨勭涓夋柟 iOS 瀹㈡埛绔紝涓嶆槸涓浗绉诲姩銆佺Щ鍔ㄧ埍瀹舵垨鍏跺叧鑱斿叕鍙哥殑瀹樻柟搴旂敤銆丼DK锛屼篃涓嶄唬琛ㄤ笂杩颁换浣曚竴鏂广€傝鍙湪浣犳湁鏉冧娇鐢ㄧ殑璐﹀彿鍜屾憚鍍忓ご涓婅繍琛屻€備簯绔帴鍙ｃ€佺鍚嶈鍒欏拰鏈嶅姟绛栫暐鍙兘鍙樺寲锛涙湰椤圭洰涓嶆彁渚涙垨缁曡繃瀹樻柟鎺堟潈锛屼篃涓嶄繚璇佹帴鍙ｉ暱鏈熺ǔ瀹氥€?)
+            Section("免责声明") {
+                Text("本项目是移动爱家的第三方 iOS 客户端，不是中国移动、移动爱家或其关联公司的官方应用、SDK，也不代表上述任何一方。请只在你有权使用的账号和摄像头上运行。云端接口、签名规则和服务策略可能变化；本项目不提供或绕过官方授权，也不保证接口长期稳定。")
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("鍏充簬")
+        .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            DiagnosticsLogger.shared.info("UI", "鏄剧ず鍏充簬椤甸潰")
+            DiagnosticsLogger.shared.info("UI", "显示关于页面")
         }
     }
 }
@@ -524,25 +510,25 @@ private struct PlayerScreen: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 鑳屾櫙 #F7F8FA
-                AppTheme.pageBackground
+                // 背景 #F7F8FA
+                Color(red: 0.969, green: 0.973, blue: 0.980)
                     .ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        // 椤堕儴:鏍囬(23pt Bold)+ 鍦ㄧ嚎鐘舵€?13pt)+ 涓や釜鍦嗛挳
+                        // 顶部:标题(23pt Bold)+ 在线状态(13pt)+ 两个圆钮
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 0) {
-                                Text(model.cameraName.isEmpty ? "鎴戠殑鎽勫儚澶? : model.cameraName)
+                                Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
                                     .font(.system(size: 23, weight: .bold))
-                                    .foregroundStyle(AppTheme.textPrimary)
+                                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
                                     .frame(height: 28, alignment: .bottomLeading)
-                                Text(model.isLoading ? "姝ｅ湪杩炴帴浜戠鈥? : "鍦ㄧ嚎 路 \(model.networkSpeedText)")
+                                Text(model.isLoading ? "正在连接云端…" : "在线 · \(model.networkSpeedText)")
                                     .font(.system(size: 13))
-                                    .foregroundStyle(AppTheme.textSecondary)
+                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
                                     .padding(.top, 6)
                             }
                             Spacer(minLength: 0)
-                            // 璁惧鍒囨崲鎸夐挳:涓績 (315,92) 鐩村緞36
+                            // 设备切换按钮:中心 (315,92) 直径36
                             Button {
                                 showingCameraSelection = true
                             } label: {
@@ -557,28 +543,28 @@ private struct PlayerScreen: View {
                             }
                             .buttonStyle(.plain)
                             .frame(width: 36, height: 36)
-                            // 鏇村鎸夐挳:涓績 (354,92) 鐩村緞36
+                            // 更多按钮:中心 (354,92) 直径36
                             Menu {
-                                Text("鐗堟湰 \(AppVersionInfo.display)")
+                                Text("版本 \(AppVersionInfo.display)")
                                 CameraSelectionMenuButton(
                                     model: model,
                                     isPresented: $showingCameraSelection
                                 )
                                 Button {
-                                    DiagnosticsLogger.shared.info("UI", "鐢ㄦ埛鎵撳紑鍏充簬椤甸潰")
+                                    DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
                                     showingAbout = true
                                 } label: {
-                                    Label("鍏充簬", systemImage: "info.circle")
+                                    Label("关于", systemImage: "info.circle")
                                 }
                                 Button {
                                     showingDiagnostics = true
                                 } label: {
-                                    Label("璇婃柇鏃ュ織", systemImage: "doc.text.magnifyingglass")
+                                    Label("诊断日志", systemImage: "doc.text.magnifyingglass")
                                 }
                                 Button(role: .destructive) {
                                     model.logout()
                                 } label: {
-                                    Label("閫€鍑哄苟杩斿洖鐧诲綍", systemImage: "rectangle.portrait.and.arrow.right")
+                                    Label("退出并返回登录", systemImage: "rectangle.portrait.and.arrow.right")
                                 }
                             } label: {
                                 Circle()
@@ -596,7 +582,7 @@ private struct PlayerScreen: View {
                         .padding(.top, 34)
                         .padding(.horizontal, 24)
 
-                        // 瑙嗛瀹瑰櫒:x=18 y=140 w=354 h=204 r=22
+                        // 视频容器:x=18 y=140 w=354 h=204 r=22
                         LiveVideoPanel(
                             model: model,
                             onFullscreen: { showingFullscreen = true }
@@ -605,11 +591,11 @@ private struct PlayerScreen: View {
                         .padding(.top, 12)
                         .padding(.horizontal, 18)
 
-                        // 涓変釜鎿嶄綔鎸夐挳:涓績 (70/182/294, 392) 鍦嗙洿寰?0
+                        // 三个操作按钮:中心 (70/182/294, 392) 圆直径60
                         HStack(spacing: 0) {
                             RoundActionButton(
                                 icon: "camera.fill",
-                                title: "鎴浘",
+                                title: "截图",
                                 isEnabled: model.isPlaying && !model.isRecording
                             ) {
                                 model.captureSnapshot()
@@ -617,7 +603,7 @@ private struct PlayerScreen: View {
                             .frame(width: 112, height: 76)
                             RoundActionButton(
                                 icon: model.isRecording ? "stop.fill" : "record.circle",
-                                title: model.isRecording ? "鍋滄褰曞儚" : "褰曞儚",
+                                title: model.isRecording ? "停止录像" : "录像",
                                 isEnabled: model.isPlaying,
                                 tint: model.isRecording ? .red : AppTheme.brand
                             ) {
@@ -626,7 +612,7 @@ private struct PlayerScreen: View {
                             .frame(width: 112, height: 76)
                             RoundActionButton(
                                 icon: "square.grid.2x2.fill",
-                                title: "濯掍綋搴?,
+                                title: "媒体库",
                                 isEnabled: true
                             ) {
                                 showingMediaLibrary = true
@@ -635,23 +621,23 @@ private struct PlayerScreen: View {
                         }
                         .padding(.top, 14)
 
-                        // 鐘舵€佹潯:x=24 y=460 w=342 h=46 r=14
+                        // 状态条:x=24 y=460 w=342 h=46 r=14
                         HStack(spacing: 0) {
                             Circle()
                                 .fill(AppTheme.brand)
                                 .frame(width: 10, height: 10)
                                 .padding(.leading, 24)
-                            Text("鐩存挱绋冲畾 路 HEVC")
+                            Text("直播稳定 · HEVC")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(AppTheme.textPrimary)
+                                .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
                                 .padding(.leading, 14)
                             Spacer(minLength: 0)
                             Button {
                                 model.stop()
                             } label: {
-                                Text("鍋滄")
+                                Text("停止")
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(AppTheme.textSecondary)
+                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
                             }
                             .buttonStyle(.plain)
                             .padding(.trailing, 22)
@@ -670,14 +656,14 @@ private struct PlayerScreen: View {
                                 .padding(.horizontal, 24)
                         }
 
-                        // 浜戝彴鍗＄墖:x=24 y=526 w=342 h=190 r=24
+                        // 云台卡片:x=24 y=526 w=342 h=190 r=24
                         if model.isAuthenticated {
                             PTZControlPanel(model: model)
                                 .frame(width: 342, height: 190)
                                 .padding(.top, 16)
                                 .padding(.horizontal, 24)
 
-                            // 鍥炴斁鍏ュ彛:x=24 y=736 w=342 h=64 r=18
+                            // 回放入口:x=24 y=736 w=342 h=64 r=18
                             NavigationLink(
                                 destination: HistoryView(model: model),
                                 isActive: $showingHistory
@@ -692,13 +678,13 @@ private struct PlayerScreen: View {
                                             .foregroundStyle(AppTheme.brand)
                                     }
                                     VStack(alignment: .leading, spacing: 0) {
-                                        Text("鍐呭瓨鍗″洖鏀?)
+                                        Text("内存卡回放")
                                             .font(.system(size: 16, weight: .semibold))
-                                            .foregroundStyle(AppTheme.textPrimary)
+                                            .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
                                             .frame(height: 20, alignment: .bottomLeading)
-                                        Text("鎸夋棩鏈熸煡鐪嬪巻鍙插綍鍍?)
+                                        Text("按日期查看历史录像")
                                             .font(.system(size: 12))
-                                            .foregroundStyle(AppTheme.textSecondary)
+                                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
                                             .padding(.top, 5)
                                     }
                                     .padding(.leading, 16)
@@ -751,14 +737,14 @@ private struct PlayerScreen: View {
     }
 }
 
-/// 瑙嗛瀹瑰櫒:x=18 y=140 w=354 h=204 r=22,娓愬彉鑳屾櫙 + LIVE 鏍囩 + 鍏ㄥ睆鎸夐挳
+/// 视频容器:x=18 y=140 w=354 h=204 r=22,渐变背景 + LIVE 标签 + 全屏按钮
 private struct LiveVideoPanel: View {
     @ObservedObject var model: PlayerViewModel
     let onFullscreen: () -> Void
 
     var body: some View {
         ZStack {
-            // 娓愬彉鑳屾櫙(videoGrad)
+            // 渐变背景(videoGrad)
             LinearGradient(
                 colors: [
                     Color(red: 0.145, green: 0.192, blue: 0.239),  // #25313D
@@ -769,14 +755,14 @@ private struct LiveVideoPanel: View {
                 endPoint: .bottom
             )
 
-            // 鏈夋祦鏃跺彔鍔犳挱鏀惧櫒
+            // 有流时叠加播放器
             if model.streamURL != nil, !model.isReplay {
                 IJKPlayerView(model: model)
                     .id(model.playerViewID)
                     .frame(width: 354, height: 204)
             }
 
-            // LIVE 鏍囩:30,154,72,28 r=14
+            // LIVE 标签:30,154,72,28 r=14
             Text("LIVE")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
@@ -786,7 +772,7 @@ private struct LiveVideoPanel: View {
                 .padding(.top, 14)
                 .padding(.leading, 12)
 
-            // 鍏ㄥ睆鎸夐挳:290,292,58,34 r=17
+            // 全屏按钮:290,292,58,34 r=17
             Button(action: onFullscreen) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 18, weight: .semibold))
@@ -807,7 +793,7 @@ private struct LiveVideoPanel: View {
     }
 }
 
-/// 鍦嗗舰鎿嶄綔鎸夐挳:鍦嗙洿寰?60,鏍囩 baseline y=438 14pt Semibold
+/// 圆形操作按钮:圆直径 60,标签 baseline y=438 14pt Semibold
 private struct RoundActionButton: View {
     let icon: String
     let title: String
@@ -828,7 +814,7 @@ private struct RoundActionButton: View {
                     )
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isEnabled ? AppTheme.textPrimary : .secondary)
+                    .foregroundStyle(isEnabled ? Color(red: 0.059, green: 0.090, blue: 0.078) : .secondary)
                     .frame(height: 18)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -878,10 +864,10 @@ private struct StatusPill: View {
     }
 
     private var label: String {
-        if model.hasError { return "閿欒" }
-        if model.isLoading { return "杩炴帴涓? }
-        if model.isPlaying { return "鐩存挱涓? }
-        return "宸插仠姝?
+        if model.hasError { return "错误" }
+        if model.isLoading { return "连接中" }
+        if model.isPlaying { return "直播中" }
+        return "已停止"
     }
 
     var body: some View {
@@ -931,7 +917,7 @@ private struct PlayerSurface: View {
             .buttonStyle(.plain)
             .frame(width: 68, height: 68)
             .contentShape(Rectangle())
-            .accessibilityLabel("妯睆鍏ㄥ睆")
+            .accessibilityLabel("横屏全屏")
             .padding(4)
         }
     }
@@ -990,7 +976,7 @@ private struct FullscreenPlayerView: View {
             .buttonStyle(.plain)
             .frame(width: 72, height: 72)
             .contentShape(Rectangle())
-            .accessibilityLabel("閫€鍑哄叏灞?)
+            .accessibilityLabel("退出全屏")
             .padding(4)
         }
         .statusBar(hidden: true)
@@ -1068,7 +1054,7 @@ private enum ScreenOrientation {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: interfaceOrientations)) { error in
                 DiagnosticsLogger.shared.warning(
                     "UI",
-                    "灞忓箷鏂瑰悜鍒囨崲澶辫触 orientation=\(interfaceOrientations) error=\(error.localizedDescription)"
+                    "屏幕方向切换失败 orientation=\(interfaceOrientations) error=\(error.localizedDescription)"
                 )
             }
         } else {
@@ -1091,11 +1077,11 @@ private struct StatusText: View {
 
 private enum AppVersionInfo {
     static var display: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "鏈煡"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
     }
 
     static var build: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "鏈煡"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
     }
 }
 
@@ -1212,48 +1198,48 @@ private struct PTZControlPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 鏍囬:baseline y=558,17pt Bold
+            // 标题:baseline y=558,17pt Bold
             HStack(alignment: .firstTextBaseline) {
-                Text("浜戝彴鎺у埗")
+                Text("云台控制")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(AppTheme.textPrimary)
+                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
                 Spacer(minLength: 0)
-                Text("鎸変竴涓嬬Щ鍔?)
+                Text("按一下移动")
                     .font(.system(size: 12))
-                    .foregroundStyle(AppTheme.textSecondary)
+                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
             }
             .padding(.leading, 18)
             .padding(.trailing, 18)
             .padding(.top, 14)
             .frame(height: 24)
 
-            // 鏂瑰悜閿尯:鐩稿鍗＄墖鍐呭潗鏍?
+            // 方向键区:相对卡片内坐标
             ZStack(alignment: .topLeading) {
                 Color.clear
                     .frame(width: 342, height: 190)
-                // 涓?(195,588) 鐩村緞46 鈫?鍗＄墖鍐呬腑蹇?(171,62)
+                // 上:(195,588) 直径46 → 卡片内中心 (171,62)
                 PTZDirectionButton(direction: .up, model: model)
                     .frame(width: 46, height: 46)
                     .position(x: 171, y: 62)
-                // 宸?(145,636) 鈫?(121,110)
+                // 左:(145,636) → (121,110)
                 PTZDirectionButton(direction: .left, model: model)
                     .frame(width: 46, height: 46)
                     .position(x: 121, y: 110)
-                // 涓?(195,636) 鐩村緞56 鈫?(171,110)
+                // 中:(195,636) 直径56 → (171,110)
                 Circle()
                     .fill(Color(red: 0.910, green: 0.933, blue: 0.949)) // #E8EEF2
                     .frame(width: 56, height: 56)
                     .overlay(
                         Image(systemName: "camera.metering.center.weighted")
                             .font(.system(size: 17))
-                            .foregroundStyle(AppTheme.textSecondary)
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
                     )
                     .position(x: 171, y: 110)
-                // 鍙?(245,636) 鈫?(221,110)
+                // 右:(245,636) → (221,110)
                 PTZDirectionButton(direction: .right, model: model)
                     .frame(width: 46, height: 46)
                     .position(x: 221, y: 110)
-                // 涓?(195,684) 鈫?(171,158)
+                // 下:(195,684) → (171,158)
                 PTZDirectionButton(direction: .down, model: model)
                     .frame(width: 46, height: 46)
                     .position(x: 171, y: 158)
@@ -1265,7 +1251,7 @@ private struct PTZControlPanel: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(.white)
-                .shadow(color: AppTheme.textPrimary.opacity(0.08), radius: 14, y: 8)
+                .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
         )
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
@@ -1289,7 +1275,7 @@ private struct PTZDirectionButton: View {
                 )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("浜戝彴\(direction.title)")
+        .accessibilityLabel("云台\(direction.title)")
     }
 }
 
@@ -1306,9 +1292,9 @@ private struct HistoryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 AppTheme.card {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("閫夋嫨鏃ユ湡")
+                        Text("选择日期")
                             .font(.subheadline.weight(.semibold))
-                        DatePicker("鏃ユ湡", selection: $selectedDate, displayedComponents: .date)
+                        DatePicker("日期", selection: $selectedDate, displayedComponents: .date)
 
                         Button {
                             model.loadRecordings(for: selectedDate, force: true)
@@ -1318,7 +1304,7 @@ private struct HistoryView: View {
                                 if model.isLoadingRecordings {
                                     ProgressView()
                                 }
-                                Text(model.isLoadingRecordings ? "姝ｅ湪鏌ヨ鈥? : "鏌ヨ鍘嗗彶褰曞儚")
+                                Text(model.isLoadingRecordings ? "正在查询…" : "查询历史录像")
                                     .font(.headline)
                             }
                             .frame(maxWidth: .infinity)
@@ -1332,7 +1318,7 @@ private struct HistoryView: View {
 
                 if model.isReplay, model.streamURL != nil {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("姝ｅ湪鍥炴斁")
+                        Text("正在回放")
                             .font(.headline)
                         PlayerSurface(model: model) {
                             showingFullscreen = true
@@ -1341,7 +1327,7 @@ private struct HistoryView: View {
                         Button(role: .destructive) {
                             model.stopReplay()
                         } label: {
-                            Label("鍋滄鍥炴斁", systemImage: "stop.fill")
+                            Label("停止回放", systemImage: "stop.fill")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -1349,14 +1335,14 @@ private struct HistoryView: View {
                 }
 
                 if model.isLoadingRecordings {
-                    ProgressView("姝ｅ湪璇诲彇鍐呭瓨鍗″綍鍍忊€?)
+                    ProgressView("正在读取内存卡录像…")
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else if model.recordings.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "film.stack")
                             .font(.title2)
                             .foregroundStyle(.secondary)
-                        Text(hasLoadedOnce ? "褰撳ぉ娌℃湁鎵惧埌褰曞儚" : "閫夋嫨鏃ユ湡鍚庢煡璇㈠唴瀛樺崱褰曞儚")
+                        Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -1364,7 +1350,7 @@ private struct HistoryView: View {
                     .padding(.vertical, 32)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("褰曞儚鐗囨锛圽(model.recordings.count)锛?)
+                        Text("录像片段（\(model.recordings.count)）")
                             .font(.headline)
 
                         ForEach(model.recordings) { recording in
@@ -1378,7 +1364,7 @@ private struct HistoryView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(timeRange(for: recording))
                                             .font(.body.monospacedDigit())
-                                        Text("鐐瑰嚮鎾斁姝ょ墖娈?)
+                                        Text("点击播放此片段")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }
@@ -1403,7 +1389,7 @@ private struct HistoryView: View {
             .padding()
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("鍐呭瓨鍗″洖鏀?)
+        .navigationTitle("内存卡回放")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -1414,9 +1400,9 @@ private struct HistoryView: View {
                     model.stopReplay()
                     dismiss()
                 } label: {
-                    Label("杩斿洖", systemImage: "chevron.left")
+                    Label("返回", systemImage: "chevron.left")
                 }
-                .accessibilityLabel("杩斿洖鎾斁")
+                .accessibilityLabel("返回播放")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -1424,7 +1410,7 @@ private struct HistoryView: View {
                 } label: {
                     Image(systemName: "doc.text.magnifyingglass")
                 }
-                .accessibilityLabel("璇婃柇鏃ュ織")
+                .accessibilityLabel("诊断日志")
             }
         }
         .onAppear {
@@ -1452,7 +1438,7 @@ private struct HistoryView: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "HH:mm:ss"
-        return "\(formatter.string(from: recording.startDate)) 鈥?\(formatter.string(from: recording.endDate))"
+        return "\(formatter.string(from: recording.startDate)) – \(formatter.string(from: recording.endDate))"
     }
 }
 
@@ -1470,11 +1456,11 @@ private struct DiagnosticsView: View {
         VStack(spacing: 0) {
             VStack(spacing: 3) {
                 HStack {
-                    Label("瀹炴椂璁板綍", systemImage: "dot.radiowaves.left.and.right")
+                    Label("实时记录", systemImage: "dot.radiowaves.left.and.right")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(AppTheme.accent)
                     Spacer()
-                    Text("\(logger.visibleLines.count) 琛?)
+                    Text("\(logger.visibleLines.count) 行")
                         .font(.footnote.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
@@ -1495,7 +1481,7 @@ private struct DiagnosticsView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     if logger.visibleLines.isEmpty {
-                        Text("鏆傛椂娌℃湁璇婃柇鏃ュ織")
+                        Text("暂时没有诊断日志")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: 200)
                     } else {
@@ -1523,12 +1509,12 @@ private struct DiagnosticsView: View {
                 }
             }
         }
-        .navigationTitle("璇婃柇鏃ュ織")
+        .navigationTitle("诊断日志")
         .navigationBarTitleDisplayMode(.inline)
         .tint(theme.accent.color)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("瀹屾垚") {
+                Button("完成") {
                     dismiss()
                 }
             }
@@ -1538,9 +1524,9 @@ private struct DiagnosticsView: View {
                         logger.visibleLevels = Set(DiagnosticsLogger.Level.allCases)
                     } label: {
                         if logger.visibleLevels == Set(DiagnosticsLogger.Level.allCases) {
-                            Label("鏄剧ず鍏ㄩ儴", systemImage: "checkmark")
+                            Label("显示全部", systemImage: "checkmark")
                         } else {
-                            Text("鏄剧ず鍏ㄩ儴")
+                            Text("显示全部")
                         }
                     }
                     Divider()
@@ -1548,9 +1534,9 @@ private struct DiagnosticsView: View {
                         Toggle(level.title, isOn: levelBinding(level))
                     }
                 } label: {
-                    Label("绛涢€?, systemImage: "line.3.horizontal.decrease.circle")
+                    Label("筛选", systemImage: "line.3.horizontal.decrease.circle")
                 }
-                .accessibilityLabel("鏃ュ織绛夌骇绛涢€?)
+                .accessibilityLabel("日志等级筛选")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
@@ -1559,18 +1545,18 @@ private struct DiagnosticsView: View {
                         diagnosticsURL = url
                         showingShareSheet = true
                     } label: {
-                        Label("瀵煎嚭鏃ュ織", systemImage: "square.and.arrow.up")
+                        Label("导出日志", systemImage: "square.and.arrow.up")
                     }
 
                     Button(role: .destructive) {
                         model.clearDiagnostics()
                     } label: {
-                        Label("娓呴櫎鏃ュ織", systemImage: "trash")
+                        Label("清除日志", systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("鏃ュ織鎿嶄綔")
+                .accessibilityLabel("日志操作")
             }
         }
         .sheet(isPresented: $showingShareSheet, onDismiss: {
@@ -1599,7 +1585,7 @@ private struct DiagnosticsView: View {
         let enabled = DiagnosticsLogger.Level.allCases
             .filter { logger.visibleLevels.contains($0) }
             .map(\.title)
-        return enabled.isEmpty ? "宸查殣钘忓叏閮ㄧ瓑绾? : "宸茬瓫閫夛細\(enabled.joined(separator: "銆?))"
+        return enabled.isEmpty ? "已隐藏全部等级" : "已筛选：\(enabled.joined(separator: "、"))"
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -1628,9 +1614,9 @@ private struct MediaLibraryView: View {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 42))
                         .foregroundStyle(.secondary)
-                    Text("鏆傛棤鎴浘鎴栧綍鍍?)
+                    Text("暂无截图或录像")
                         .font(.headline)
-                    Text("鍦ㄧ洿鎾敾闈㈢偣鍑绘埅鍥炬垨褰曞儚锛屽唴瀹逛細淇濆瓨鍦ㄨ繖閲屻€?)
+                    Text("在直播画面点击截图或录像，内容会保存在这里。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1650,12 +1636,12 @@ private struct MediaLibraryView: View {
                             Button(role: .destructive) {
                                 library.delete(item)
                             } label: {
-                                Label("鍒犻櫎", systemImage: "trash")
+                                Label("删除", systemImage: "trash")
                             }
                             Button {
                                 presentSystemShare(activityItems: [sharePayload(for: item)])
                             } label: {
-                                Label("鍒嗕韩", systemImage: "square.and.arrow.up")
+                                Label("分享", systemImage: "square.and.arrow.up")
                             }
                             .tint(AppTheme.accent)
                         }
@@ -1663,12 +1649,12 @@ private struct MediaLibraryView: View {
                             Button {
                                 presentSystemShare(activityItems: [sharePayload(for: item)])
                             } label: {
-                                Label("鍒嗕韩", systemImage: "square.and.arrow.up")
+                                Label("分享", systemImage: "square.and.arrow.up")
                             }
                             Button(role: .destructive) {
                                 library.delete(item)
                             } label: {
-                                Label("鍒犻櫎", systemImage: "trash")
+                                Label("删除", systemImage: "trash")
                             }
                         }
                     }
@@ -1677,11 +1663,11 @@ private struct MediaLibraryView: View {
             }
         }
         .tint(theme.accent.color)
-        .navigationTitle("濯掍綋搴?)
+        .navigationTitle("媒体库")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("瀹屾垚") {
+                Button("完成") {
                     dismiss()
                 }
             }
@@ -1766,7 +1752,7 @@ private struct MediaLibraryRow: View {
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         let dateText = formatter.string(from: item.date)
         let sizeText = item.fileSizeText
-        return sizeText.isEmpty ? dateText : "\(dateText) 路 \(sizeText)"
+        return sizeText.isEmpty ? dateText : "\(dateText) · \(sizeText)"
     }
 }
 
@@ -1785,7 +1771,7 @@ private struct MediaPreviewView: View {
                             .padding()
                     }
                 } else {
-                    Text("鏃犳硶璇诲彇鍥剧墖")
+                    Text("无法读取图片")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -1919,4 +1905,3 @@ private struct EmbeddedActivityView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
-
