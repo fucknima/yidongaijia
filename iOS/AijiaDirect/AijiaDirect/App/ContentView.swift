@@ -133,21 +133,17 @@ private enum AppTheme {
     /// 输入/控件浅灰 #F5F7F8
     static let fieldFill = Color(red: 0.961, green: 0.969, blue: 0.973)
     /// 输入/控件浅灰:浅 #F5F7F8 / 深 #202730
-    static let fieldFillAdaptive = Color {
-        UIColor { traits in
+    static let fieldFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.125, green: 0.153, blue: 0.188, alpha: 1)   // #202730
                 : UIColor(red: 0.961, green: 0.969, blue: 0.973, alpha: 1)   // #F5F7F8
-        }
-    }
+        })
     /// 输入图标圆:浅 #E7F7F3 / 深 #1A342E
-    static let inputIconFillAdaptive = Color {
-        UIColor { traits in
+    static let inputIconFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.102, green: 0.204, blue: 0.180, alpha: 1)   // #1A342E
                 : UIColor(red: 0.906, green: 0.969, blue: 0.953, alpha: 1)   // #E7F7F3
-        }
-    }
+        })
     /// 视频渐变 top #25313D
     static let videoTop = Color(red: 0.145, green: 0.192, blue: 0.239)
     /// 视频渐变 mid #111827
@@ -162,94 +158,71 @@ private enum AppTheme {
     // MARK: - 深色模式动态颜色
 
     /// 主文字:浅 #0F172A / 深 #E8EDF2
-    static let textPrimaryAdaptive = Color {
-        UIColor { traits in
+    static let textPrimaryAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.910, green: 0.929, blue: 0.949, alpha: 1)   // #E8EDF2
                 : UIColor(red: 0.059, green: 0.090, blue: 0.078, alpha: 1)   // #0F172A
-        }
-    }
+        })
     /// 次级文字:浅 #64748B / 深 #94A3B8
-    static let textSecondaryAdaptive = Color {
-        UIColor { traits in
+    static let textSecondaryAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.580, green: 0.639, blue: 0.722, alpha: 1)   // #94A3B8
                 : UIColor(red: 0.392, green: 0.455, blue: 0.545, alpha: 1)   // #64748B
-        }
-    }
+        })
     /// 页面背景:浅 #F7F8FA / 深 #101418
-    static let pageBackgroundAdaptive = Color {
-        UIColor { traits in
+    static let pageBackgroundAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.063, green: 0.078, blue: 0.094, alpha: 1)   // #101418
                 : UIColor(red: 0.969, green: 0.973, blue: 0.980, alpha: 1)   // #F7F8FA
-        }
-    }
+        })
     /// 卡片:浅 #FFFFFF / 深 #1B222C
-    static let cardFillAdaptive = Color {
-        UIColor { traits in
+    static let cardFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.106, green: 0.133, blue: 0.173, alpha: 1)   // #1B222C
                 : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
-        }
-    }
+        })
     /// 品牌浅底:浅 #ECF8F5 / 深 #1A342E
-    static let brandSoftAdaptive = Color {
-        UIColor { traits in
+    static let brandSoftAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.102, green: 0.204, blue: 0.180, alpha: 1)   // #1A342E
                 : UIColor(red: 0.925, green: 0.973, blue: 0.961, alpha: 1)   // #ECF8F5
-        }
-    }
+        })
     /// 更多按钮底:浅 #EEF2F7 / 深 #262E39
-    static let iconMoreFillAdaptive = Color {
-        UIColor { traits in
+    static let iconMoreFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.149, green: 0.180, blue: 0.224, alpha: 1)   // #262E39
                 : UIColor(red: 0.933, green: 0.949, blue: 0.969, alpha: 1)   // #EEF2F7
-        }
-    }
+        })
     /// 更多按钮图标:浅 #475569 / 深 #C7D2E0
-    static let iconMoreFGAdaptive = Color {
-        UIColor { traits in
+    static let iconMoreFGAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.780, green: 0.824, blue: 0.878, alpha: 1)   // #C7D2E0
                 : UIColor(red: 0.278, green: 0.333, blue: 0.412, alpha: 1)   // #475569
-        }
-    }
+        })
     /// 云台方向按钮底:浅 #F0F7F5 / 深 #1D372F
-    static let ptzDirFillAdaptive = Color {
-        UIColor { traits in
+    static let ptzDirFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.114, green: 0.216, blue: 0.184, alpha: 1)   // #1D372F
                 : UIColor(red: 0.941, green: 0.969, blue: 0.961, alpha: 1)   // #F0F7F5
-        }
-    }
+        })
     /// 云台中心按钮底:浅 #E8EEF2 / 深 #2A333D
-    static let ptzMidFillAdaptive = Color {
-        UIColor { traits in
+    static let ptzMidFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.165, green: 0.200, blue: 0.239, alpha: 1)   // #2A333D
                 : UIColor(red: 0.910, green: 0.933, blue: 0.949, alpha: 1)   // #E8EEF2
-        }
-    }
+        })
     /// 分段控件底:浅 #E9EEF1 / 深 #232B34
-    static let segFillAdaptive = Color {
-        UIColor { traits in
+    static let segFillAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.137, green: 0.169, blue: 0.204, alpha: 1)   // #232B34
                 : UIColor(red: 0.914, green: 0.933, blue: 0.945, alpha: 1)   // #E9EEF1
-        }
-    }
+        })
     /// 时间轴轨道:浅 #D9E1E6 / 深 #2B3440
-    static let sliderTrackAdaptive = Color {
-        UIColor { traits in
+    static let sliderTrackAdaptive = Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: 0.169, green: 0.204, blue: 0.251, alpha: 1)   // #2B3440
                 : UIColor(red: 0.851, green: 0.882, blue: 0.902, alpha: 1)   // #D9E1E6
-        }
-    }
-
+        })
     static let cardRadius: CGFloat = 16
 
     static var cardBackground: Color {
