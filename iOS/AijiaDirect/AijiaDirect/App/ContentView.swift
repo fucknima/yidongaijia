@@ -118,10 +118,137 @@ private enum AppTheme {
         ThemeStore.shared.accent.color
     }
 
-    /// 品牌主色 #139A82(来自 Player.svg)
+    /// 品牌主色 #139A82(来自 Player.svg),深浅模式通用
     static let brand = Color(red: 0.075, green: 0.604, blue: 0.510)
+    /// 品牌渐变 #17A88B → #0D7F70(Login logo)
+    static let brandGradient = LinearGradient(
+        colors: [Color(red: 0.090, green: 0.659, blue: 0.545), Color(red: 0.051, green: 0.498, blue: 0.439)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
     /// 品牌浅底 #ECF8F5
     static let brandSoft = Color(red: 0.925, green: 0.973, blue: 0.961)
+    /// 背景 #F7F8FA
+    static let pageBackground = Color(red: 0.969, green: 0.973, blue: 0.980)
+    /// 输入/控件浅灰 #F5F7F8
+    static let fieldFill = Color(red: 0.961, green: 0.969, blue: 0.973)
+    /// 输入/控件浅灰:浅 #F5F7F8 / 深 #202730
+    static let fieldFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.125, green: 0.153, blue: 0.188, alpha: 1)   // #202730
+                : UIColor(red: 0.961, green: 0.969, blue: 0.973, alpha: 1)   // #F5F7F8
+        }
+    }
+    /// 输入图标圆:浅 #E7F7F3 / 深 #1A342E
+    static let inputIconFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.102, green: 0.204, blue: 0.180, alpha: 1)   // #1A342E
+                : UIColor(red: 0.906, green: 0.969, blue: 0.953, alpha: 1)   // #E7F7F3
+        }
+    }
+    /// 视频渐变 top #25313D
+    static let videoTop = Color(red: 0.145, green: 0.192, blue: 0.239)
+    /// 视频渐变 mid #111827
+    static let videoMid = Color(red: 0.067, green: 0.094, blue: 0.153)
+    /// 视频渐变 bottom #0B1220
+    static let videoBottom = Color(red: 0.043, green: 0.071, blue: 0.125)
+    /// 次级文字 #64748B
+    static let textSecondary = Color(red: 0.392, green: 0.455, blue: 0.545)
+    /// 主文字 #0F172A
+    static let textPrimary = Color(red: 0.059, green: 0.090, blue: 0.078)
+
+    // MARK: - 深色模式动态颜色
+
+    /// 主文字:浅 #0F172A / 深 #E8EDF2
+    static let textPrimaryAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.910, green: 0.929, blue: 0.949, alpha: 1)   // #E8EDF2
+                : UIColor(red: 0.059, green: 0.090, blue: 0.078, alpha: 1)   // #0F172A
+        }
+    }
+    /// 次级文字:浅 #64748B / 深 #94A3B8
+    static let textSecondaryAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.580, green: 0.639, blue: 0.722, alpha: 1)   // #94A3B8
+                : UIColor(red: 0.392, green: 0.455, blue: 0.545, alpha: 1)   // #64748B
+        }
+    }
+    /// 页面背景:浅 #F7F8FA / 深 #101418
+    static let pageBackgroundAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.063, green: 0.078, blue: 0.094, alpha: 1)   // #101418
+                : UIColor(red: 0.969, green: 0.973, blue: 0.980, alpha: 1)   // #F7F8FA
+        }
+    }
+    /// 卡片:浅 #FFFFFF / 深 #1B222C
+    static let cardFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.106, green: 0.133, blue: 0.173, alpha: 1)   // #1B222C
+                : UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
+        }
+    }
+    /// 品牌浅底:浅 #ECF8F5 / 深 #1A342E
+    static let brandSoftAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.102, green: 0.204, blue: 0.180, alpha: 1)   // #1A342E
+                : UIColor(red: 0.925, green: 0.973, blue: 0.961, alpha: 1)   // #ECF8F5
+        }
+    }
+    /// 更多按钮底:浅 #EEF2F7 / 深 #262E39
+    static let iconMoreFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.149, green: 0.180, blue: 0.224, alpha: 1)   // #262E39
+                : UIColor(red: 0.933, green: 0.949, blue: 0.969, alpha: 1)   // #EEF2F7
+        }
+    }
+    /// 更多按钮图标:浅 #475569 / 深 #C7D2E0
+    static let iconMoreFGAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.780, green: 0.824, blue: 0.878, alpha: 1)   // #C7D2E0
+                : UIColor(red: 0.278, green: 0.333, blue: 0.412, alpha: 1)   // #475569
+        }
+    }
+    /// 云台方向按钮底:浅 #F0F7F5 / 深 #1D372F
+    static let ptzDirFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.114, green: 0.216, blue: 0.184, alpha: 1)   // #1D372F
+                : UIColor(red: 0.941, green: 0.969, blue: 0.961, alpha: 1)   // #F0F7F5
+        }
+    }
+    /// 云台中心按钮底:浅 #E8EEF2 / 深 #2A333D
+    static let ptzMidFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.165, green: 0.200, blue: 0.239, alpha: 1)   // #2A333D
+                : UIColor(red: 0.910, green: 0.933, blue: 0.949, alpha: 1)   // #E8EEF2
+        }
+    }
+    /// 分段控件底:浅 #E9EEF1 / 深 #232B34
+    static let segFillAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.137, green: 0.169, blue: 0.204, alpha: 1)   // #232B34
+                : UIColor(red: 0.914, green: 0.933, blue: 0.945, alpha: 1)   // #E9EEF1
+        }
+    }
+    /// 时间轴轨道:浅 #D9E1E6 / 深 #2B3440
+    static let sliderTrackAdaptive = Color {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.169, green: 0.204, blue: 0.251, alpha: 1)   // #2B3440
+                : UIColor(red: 0.851, green: 0.882, blue: 0.902, alpha: 1)   // #D9E1E6
+        }
+    }
 
     static let cardRadius: CGFloat = 16
 
@@ -198,116 +325,263 @@ private struct LoginView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    VStack(spacing: 14) {
-                        AppMark()
-                        VStack(spacing: 5) {
-                            Text("爱家直连")
-                                .font(.title.weight(.bold))
-                            Text("登录移动爱家账号，摄像头画面在本机解码")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+            ZStack {
+                AppTheme.pageBackgroundAdaptive
+                    .ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // Logo:x=145 y=104 w=100 h=100 r=28 品牌渐变
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(AppTheme.brandGradient)
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(.white, lineWidth: 5)
+                                    .frame(width: 50, height: 33)
+                                Path { path in
+                                    path.move(to: CGPoint(x: 25, y: -8.5))
+                                    path.addLine(to: CGPoint(x: 41, y: -17.5))
+                                    path.addLine(to: CGPoint(x: 41, y: 18.5))
+                                    path.close()
+                                }
+                                .fill(.white)
+                            }
+                            .frame(width: 50, height: 33)
                         }
-                    }
-                    .padding(.top, 44)
+                        .frame(width: 100, height: 100)
+                        .padding(.top, 57)
 
-                    AppTheme.card {
-                        VStack(spacing: 14) {
-                            TextField("移动手机号", text: $model.phone)
-                                .textContentType(.telephoneNumber)
-                                .keyboardType(.phonePad)
-                                .focused($focusedField, equals: .phone)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
+                        // 标题:baseline y=235 30pt Bold
+                        Text("爱家直连")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                            .frame(height: 38)
+                            .padding(.top, 8)
 
-                            SecureField("移动爱家密码", text: passwordBinding)
-                                .textContentType(.password)
-                                .focused($focusedField, equals: .password)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color(.secondarySystemBackground))
-                                )
+                        // 副标题:baseline y=265 15pt
+                        Text("移动爱家第三方 iOS 客户端")
+                            .font(.system(size: 15))
+                            .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                            .frame(height: 20)
+                            .padding(.top, 8)
 
-                            Toggle("记住登录信息", isOn: $model.rememberLogin)
-                                .font(.subheadline)
-                                .padding(.horizontal, 2)
+                        // 登录卡片:24,310,342,280 r=24
+                        VStack(spacing: 0) {
+                            // "账号登录" baseline y=342 18pt Bold
+                            Text("账号登录")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                .frame(width: 306, height: 22, alignment: .leading)
+                                .padding(.top, 20)
 
+                            // 手机号:42,366,306,54 r=14
+                            HStack(spacing: 0) {
+                                ZStack {
+                                    Circle()
+                                        .fill(AppTheme.inputIconFillAdaptive) // #E7F7F3 / 深色 #1A342E
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(AppTheme.brand)
+                                }
+                                .frame(width: 30, height: 30)
+                                TextField("移动手机号", text: $model.phone)
+                                    .textContentType(.telephoneNumber)
+                                    .keyboardType(.phonePad)
+                                    .focused($focusedField, equals: .phone)
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                    .tint(AppTheme.brand)
+                                    .padding(.leading, 26)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .padding(.leading, 26)
+                            .frame(width: 306, height: 54)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(AppTheme.fieldFillAdaptive)
+                            )
+                            .padding(.top, 22)
+
+                            // 密码:42,432,306,54 r=14
+                            HStack(spacing: 0) {
+                                ZStack {
+                                    Circle()
+                                        .fill(AppTheme.inputIconFillAdaptive) // #E7F7F3 / 深色 #1A342E
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(AppTheme.brand)
+                                }
+                                .frame(width: 30, height: 30)
+                                SecureField("移动爱家密码", text: passwordBinding)
+                                    .textContentType(.password)
+                                    .focused($focusedField, equals: .password)
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                    .tint(AppTheme.brand)
+                                    .padding(.leading, 26)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .padding(.leading, 26)
+                            .frame(width: 306, height: 54)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(AppTheme.fieldFillAdaptive)
+                            )
+                            .padding(.top, 12)
+
+                            // 记住登录信息:baseline y=522 15pt,开关(290,503,48,28)
+                            HStack(spacing: 0) {
+                                Text("记住登录信息")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                Spacer(minLength: 0)
+                                Button {
+                                    model.rememberLogin.toggle()
+                                } label: {
+                                    ZStack(alignment: model.rememberLogin ? .trailing : .leading) {
+                                        Capsule()
+                                            .fill(model.rememberLogin ? AppTheme.brand : Color(red: 0.851, green: 0.882, blue: 0.902))
+                                            .frame(width: 48, height: 28)
+                                        Circle()
+                                            .fill(.white)
+                                            .frame(width: 22, height: 22)
+                                            .padding(3)
+                                    }
+                                    .frame(width: 48, height: 28)
+                                }
+                                .buttonStyle(.plain)
+                                .animation(.easeOut(duration: 0.15), value: model.rememberLogin)
+                            }
+                            .frame(width: 306)
+                            .padding(.top, 24)
+
+                            // 登录按钮:42,542,306,48 r=14
                             Button {
                                 focusedField = nil
                                 model.start()
                             } label: {
-                                HStack {
+                                ZStack {
                                     if model.isLoading {
                                         ProgressView()
                                             .tint(.white)
                                     }
-                                    Text(model.isLoading ? "正在登录…" : "登录并播放")
-                                        .font(.headline)
+                                    Text("登录")
+                                        .font(.system(size: 17, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .opacity(model.isLoading ? 0 : 1)
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 4)
+                                .frame(width: 306, height: 48)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(AppTheme.brand)
+                                )
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AppTheme.accent)
+                            .buttonStyle(.plain)
                             .disabled(
                                 model.isLoading ||
                                 model.phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                                 model.password.isEmpty
                             )
+                            .padding(.top, 22)
                         }
-                    }
+                        .frame(width: 342, height: 280)
+                        .background(
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(AppTheme.cardFillAdaptive)
+                                .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
+                        )
+                        .padding(.top, 42)
 
-                    if !model.status.isEmpty {
-                        StatusText(model: model)
-                    }
+                        if !model.status.isEmpty {
+                            StatusText(model: model)
+                                .padding(.top, 12)
+                                .padding(.horizontal, 24)
+                        }
 
-                    Text("密码只保存在本机钥匙串，不会上传到其他服务器。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        // 安全提示:baseline y=635 13pt
+                        Text("密码仅保存在本机钥匙串")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                            .padding(.top, 24)
+
+                        // 本机直连提示卡:24,682,342,96 r=20
+                        HStack(spacing: 0) {
+                            ZStack {
+                                Circle()
+                                    .fill(AppTheme.cardFillAdaptive)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(AppTheme.brand)
+                            }
+                            .frame(width: 30, height: 30)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("本机直连云端")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                    .frame(height: 20)
+                                Text("视频由 iPhone 本机解码，不经过中转服务器")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                    .padding(.top, 6)
+                            }
+                            .padding(.leading, 26)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.leading, 28)
+                        .frame(width: 342, height: 96)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(AppTheme.brandSoftAdaptive)
+                        )
+                        .padding(.top, 20)
+                    }
+                    .padding(.bottom, 32)
                 }
-                .padding(20)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("登录")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showingAbout = true
-                        } label: {
-                            Label("关于", systemImage: "info.circle")
-                        }
-                        Button {
-                            showingDiagnostics = true
-                        } label: {
-                            Label("诊断日志", systemImage: "doc.text.magnifyingglass")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .accessibilityLabel("更多操作")
-                }
-                ToolbarItem(placement: .keyboard) {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
                     Button("完成") {
                         focusedField = nil
                     }
                 }
             }
-            .sheet(isPresented: $showingAbout) {
-                NavigationView {
-                    AboutView()
+        }
+        // 右上 ⋯ 菜单:中心 (342,80) 直径36
+        .overlay(alignment: .topTrailing) {
+            Menu {
+                Text("版本 \(AppVersionInfo.display)")
+                Button {
+                    showingAbout = true
+                } label: {
+                    Label("关于", systemImage: "info.circle")
                 }
+                Button {
+                    showingDiagnostics = true
+                } label: {
+                    Label("诊断日志", systemImage: "doc.text.magnifyingglass")
+                }
+            } label: {
+                Circle()
+                    .fill(AppTheme.iconMoreFillAdaptive)
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(AppTheme.iconMoreFGAdaptive)
+                    )
             }
-            .sheet(isPresented: $showingDiagnostics) {
-                NavigationView {
-                    DiagnosticsView(model: model)
-                }
+            .padding(.top, 62)
+            .padding(.trailing, 18)
+        }
+        .sheet(isPresented: $showingAbout) {
+            NavigationView {
+                AboutView()
+            }
+        }
+        .sheet(isPresented: $showingDiagnostics) {
+            NavigationView {
+                DiagnosticsView(model: model)
             }
         }
     }
@@ -510,8 +784,8 @@ private struct PlayerScreen: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景 #F7F8FA
-                Color(red: 0.969, green: 0.973, blue: 0.980)
+                // 背景 #F7F8FA / 深色 #101418
+                AppTheme.pageBackgroundAdaptive
                     .ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
@@ -520,11 +794,11 @@ private struct PlayerScreen: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
                                     .font(.system(size: 23, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
                                     .frame(height: 28, alignment: .bottomLeading)
                                 Text(model.isLoading ? "正在连接云端…" : "在线 · \(model.networkSpeedText)")
                                     .font(.system(size: 13))
-                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
                                     .padding(.top, 6)
                             }
                             Spacer(minLength: 0)
@@ -533,7 +807,7 @@ private struct PlayerScreen: View {
                                 showingCameraSelection = true
                             } label: {
                                 Circle()
-                                    .fill(AppTheme.brandSoft)
+                                    .fill(AppTheme.brandSoftAdaptive)
                                     .frame(width: 36, height: 36)
                                     .overlay(
                                         Image(systemName: "video.badge.plus")
@@ -568,12 +842,12 @@ private struct PlayerScreen: View {
                                 }
                             } label: {
                                 Circle()
-                                    .fill(Color(red: 0.933, green: 0.949, blue: 0.969)) // #EEF2F7
+                                    .fill(AppTheme.iconMoreFillAdaptive) // #EEF2F7 / 深色 #262E39
                                     .frame(width: 36, height: 36)
                                     .overlay(
                                         Image(systemName: "ellipsis")
                                             .font(.system(size: 16, weight: .bold))
-                                            .foregroundStyle(Color(red: 0.278, green: 0.333, blue: 0.412)) // #475569
+                                            .foregroundStyle(AppTheme.iconMoreFGAdaptive) // #475569 / 深色 #C7D2E0
                                     )
                             }
                             .frame(width: 36, height: 36)
@@ -629,7 +903,7 @@ private struct PlayerScreen: View {
                                 .padding(.leading, 24)
                             Text("直播稳定 · HEVC")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                .foregroundStyle(AppTheme.textPrimaryAdaptive)
                                 .padding(.leading, 14)
                             Spacer(minLength: 0)
                             Button {
@@ -637,7 +911,7 @@ private struct PlayerScreen: View {
                             } label: {
                                 Text("停止")
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
                             }
                             .buttonStyle(.plain)
                             .padding(.trailing, 22)
@@ -645,7 +919,7 @@ private struct PlayerScreen: View {
                         .frame(width: 342, height: 46)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(AppTheme.brandSoft)
+                                .fill(AppTheme.brandSoftAdaptive)
                         )
                         .padding(.top, 14)
                         .padding(.horizontal, 24)
@@ -671,7 +945,7 @@ private struct PlayerScreen: View {
                                 HStack(spacing: 0) {
                                     ZStack {
                                         Circle()
-                                            .fill(AppTheme.brandSoft)
+                                            .fill(AppTheme.brandSoftAdaptive)
                                             .frame(width: 40, height: 40)
                                         Image(systemName: "clock.arrow.circlepath")
                                             .font(.system(size: 16, weight: .semibold))
@@ -680,24 +954,24 @@ private struct PlayerScreen: View {
                                     VStack(alignment: .leading, spacing: 0) {
                                         Text("内存卡回放")
                                             .font(.system(size: 16, weight: .semibold))
-                                            .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                            .foregroundStyle(AppTheme.textPrimaryAdaptive)
                                             .frame(height: 20, alignment: .bottomLeading)
                                         Text("按日期查看历史录像")
                                             .font(.system(size: 12))
-                                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                                            .foregroundStyle(AppTheme.textSecondaryAdaptive)
                                             .padding(.top, 5)
                                     }
                                     .padding(.leading, 16)
                                     Spacer(minLength: 0)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(AppTheme.textSecondaryAdaptive)
                                         .padding(.trailing, 20)
                                 }
                                 .frame(width: 342, height: 64)
                                 .background(
                                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill(.white)
+                                        .fill(AppTheme.cardFillAdaptive)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -805,7 +1079,7 @@ private struct RoundActionButton: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Circle()
-                    .fill(.white)
+                    .fill(AppTheme.cardFillAdaptive)
                     .frame(width: 60, height: 60)
                     .overlay(
                         Image(systemName: icon)
@@ -814,7 +1088,7 @@ private struct RoundActionButton: View {
                     )
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isEnabled ? Color(red: 0.059, green: 0.090, blue: 0.078) : .secondary)
+                    .foregroundStyle(isEnabled ? AppTheme.textPrimaryAdaptive : .secondary)
                     .frame(height: 18)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1202,11 +1476,11 @@ private struct PTZControlPanel: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("云台控制")
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
                 Spacer(minLength: 0)
                 Text("按一下移动")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
             }
             .padding(.leading, 18)
             .padding(.trailing, 18)
@@ -1227,12 +1501,12 @@ private struct PTZControlPanel: View {
                     .position(x: 121, y: 110)
                 // 中:(195,636) 直径56 → (171,110)
                 Circle()
-                    .fill(Color(red: 0.910, green: 0.933, blue: 0.949)) // #E8EEF2
+                    .fill(AppTheme.ptzMidFillAdaptive) // #E8EEF2 / 深色 #2A333D
                     .frame(width: 56, height: 56)
                     .overlay(
                         Image(systemName: "camera.metering.center.weighted")
                             .font(.system(size: 17))
-                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                            .foregroundStyle(AppTheme.textSecondaryAdaptive)
                     )
                     .position(x: 171, y: 110)
                 // 右:(245,636) → (221,110)
@@ -1250,7 +1524,7 @@ private struct PTZControlPanel: View {
         .frame(width: 342, height: 190)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.white)
+                .fill(AppTheme.cardFillAdaptive)
                 .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
         )
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -1266,7 +1540,7 @@ private struct PTZDirectionButton: View {
             model.controlPTZ(direction)
         } label: {
             Circle()
-                .fill(Color(red: 0.941, green: 0.969, blue: 0.961)) // #F0F7F5
+                .fill(AppTheme.ptzDirFillAdaptive) // #F0F7F5 / 深色 #1D372F
                 .frame(width: 46, height: 46)
                 .overlay(
                     Image(systemName: direction.systemImage)
@@ -1286,138 +1560,304 @@ private struct HistoryView: View {
     @State private var hasLoadedOnce = false
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
+    @State private var showingDatePicker = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                AppTheme.card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("选择日期")
-                            .font(.subheadline.weight(.semibold))
-                        DatePicker("日期", selection: $selectedDate, displayedComponents: .date)
-
-                        Button {
-                            model.loadRecordings(for: selectedDate, force: true)
-                            hasLoadedOnce = true
-                        } label: {
-                            HStack {
-                                if model.isLoadingRecordings {
-                                    ProgressView()
+        ZStack {
+            AppTheme.pageBackgroundAdaptive
+                .ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // 日期卡:24,124,342,116 r=22
+                    VStack(spacing: 0) {
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("选择日期")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                    .frame(height: 20)
+                                Button {
+                                    showingDatePicker = true
+                                } label: {
+                                    Text(formattedDate)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                        .frame(height: 26, alignment: .bottomLeading)
+                                        .padding(.top, 8)
                                 }
-                                Text(model.isLoadingRecordings ? "正在查询…" : "查询历史录像")
-                                    .font(.headline)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("选择日期")
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppTheme.accent)
-                        .disabled(model.isLoadingRecordings || !model.isAuthenticated)
-                    }
-                }
-
-                if model.isReplay, model.streamURL != nil {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("正在回放")
-                            .font(.headline)
-                        PlayerSurface(model: model) {
-                            showingFullscreen = true
-                        }
-                        ReplayControls(model: model)
-                        Button(role: .destructive) {
-                            model.stopReplay()
-                        } label: {
-                            Label("停止回放", systemImage: "stop.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-
-                if model.isLoadingRecordings {
-                    ProgressView("正在读取内存卡录像…")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else if model.recordings.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "film.stack")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("录像片段（\(model.recordings.count)）")
-                            .font(.headline)
-
-                        ForEach(model.recordings) { recording in
+                            Spacer(minLength: 0)
+                            // 查询按钮:274,161,72,34 r=17
                             Button {
-                                model.playRecording(recording)
+                                model.loadRecordings(for: selectedDate, force: true)
+                                hasLoadedOnce = true
                             } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "play.circle.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(AppTheme.accent)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(timeRange(for: recording))
-                                            .font(.body.monospacedDigit())
-                                        Text("点击播放此片段")
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
+                                ZStack {
+                                    if model.isLoadingRecordings {
+                                        ProgressView()
+                                            .tint(AppTheme.brand)
                                     }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.footnote.weight(.semibold))
-                                        .foregroundStyle(.tertiary)
+                                    Text("查询")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(AppTheme.brand)
+                                        .opacity(model.isLoadingRecordings ? 0 : 1)
                                 }
-                                .padding(14)
+                                .frame(width: 72, height: 34)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(Color(.secondarySystemGroupedBackground))
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .fill(AppTheme.brandSoftAdaptive)
                                 )
                             }
                             .buttonStyle(.plain)
+                            .disabled(model.isLoadingRecordings || !model.isAuthenticated)
                         }
+                        .frame(width: 294, height: 56)
+                        .padding(.top, 28)
+                        .padding(.leading, 18)
+                        .padding(.trailing, 30)
+                    }
+                    .frame(width: 342, height: 116)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .fill(AppTheme.cardFillAdaptive)
+                            .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
+                    )
+                    .padding(.top, 36)
+                    .padding(.horizontal, 24)
+
+                    // 回放画面:24,260,342,193 r=20(仅在回放中)
+                    if model.isReplay, model.streamURL != nil {
+                        VStack(spacing: 0) {
+                            ZStack {
+                                LinearGradient(
+                                    colors: [AppTheme.videoTop, AppTheme.videoMid, AppTheme.videoBottom],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                IJKPlayerView(model: model)
+                                    .id(model.playerViewID)
+                                    .frame(width: 342, height: 193)
+                                // "正在回放" baseline y=288 12pt Bold
+                                Text("正在回放")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    .padding(.top, 14)
+                                    .padding(.leading, 18)
+                                // 播放按钮:(195,356) r=30
+                                Button {
+                                    model.stopReplay()
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.white.opacity(0.8))
+                                            .frame(width: 60, height: 60)
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(AppTheme.textPrimary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                            .frame(width: 342, height: 193)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                            // 时间:14:32:05 baseline y=481 12pt
+                            HStack(spacing: 0) {
+                                Text(formatClock(model.replayCurrentSecond))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                Spacer(minLength: 0)
+                                Text(formatClock(model.replayDurationSecond))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                            }
+                            .frame(width: 330)
+                            .padding(.top, 12)
+
+                            // 时间轴:x=30 y=493 w=330 h=5 轨道 + 进度 + 圆点
+                            GeometryReader { proxy in
+                                let trackWidth: CGFloat = 330
+                                let thumb = max(0.0, min(1.0, Double(model.replayPosition)))
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(AppTheme.sliderTrackAdaptive)
+                                        .frame(width: trackWidth, height: 5)
+                                    Capsule()
+                                        .fill(AppTheme.brand)
+                                        .frame(width: trackWidth * CGFloat(thumb), height: 5)
+                                    Circle()
+                                        .fill(AppTheme.brand)
+                                        .frame(width: 14, height: 14)
+                                        .offset(x: trackWidth * CGFloat(thumb) - 7)
+                                }
+                                .frame(width: 330, height: 14)
+                                .contentShape(Rectangle())
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            let ratio = min(max(value.location.x / 330, 0), 1)
+                                            model.seekReplay(to: Double(ratio))
+                                        }
+                                )
+                            }
+                            .frame(width: 330, height: 14)
+                            .padding(.top, 10)
+                        }
+                        .padding(.top, 20)
+                        .padding(.horizontal, 24)
+                    }
+
+                    if model.isLoadingRecordings {
+                        ProgressView("正在读取内存卡录像…")
+                            .tint(AppTheme.brand)
+                            .frame(width: 342, alignment: .center)
+                            .padding(.top, 40)
+                    } else if model.recordings.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "film.stack")
+                                .font(.system(size: 30))
+                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                            Text(hasLoadedOnce ? "当天没有找到录像" : "选择日期后查询内存卡录像")
+                                .font(.system(size: 13))
+                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                        }
+                        .frame(width: 342)
+                        .padding(.top, 40)
+                    } else {
+                        // "录像片段  12" baseline y=540 17pt Bold
+                        Text("录像片段  \(model.recordings.count)")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                            .frame(width: 342, height: 22, alignment: .leading)
+                            .padding(.top, 28)
+
+                        // 录像行:24,562 起 342×68 r=17,步进 82
+                        VStack(spacing: 14) {
+                            ForEach(model.recordings) { recording in
+                                Button {
+                                    model.playRecording(recording)
+                                } label: {
+                                    HStack(spacing: 0) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(AppTheme.brandSoftAdaptive)
+                                                .frame(width: 40, height: 40)
+                                            Image(systemName: "play.fill")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(AppTheme.brand)
+                                        }
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            Text(timeRange(for: recording))
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                                .frame(height: 20, alignment: .bottomLeading)
+                                            Text(durationText(for: recording))
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                                .padding(.top, 6)
+                                        }
+                                        .padding(.leading, 32)
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                            .padding(.trailing, 20)
+                                    }
+                                    .frame(width: 342, height: 68)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                            .fill(AppTheme.cardFillAdaptive)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 14)
+                    }
+
+                    if !model.status.isEmpty {
+                        StatusText(model: model)
+                            .padding(.top, 12)
+                            .padding(.horizontal, 24)
                     }
                 }
-
-                StatusText(model: model)
+                .padding(.bottom, 32)
             }
-            .padding()
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("内存卡回放")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    // Only an explicit return to the live page ends replay.
-                    // Pushing DiagnosticsView must leave the replay session alive.
-                    model.stopReplay()
-                    dismiss()
-                } label: {
-                    Label("返回", systemImage: "chevron.left")
-                }
-                .accessibilityLabel("返回播放")
+        .toolbar(.hidden, for: .navigationBar)
+        // 返回 ‹:x=26 baseline y=88 30pt
+        .overlay(alignment: .topLeading) {
+            Button {
+                model.stopReplay()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                    .frame(width: 40, height: 40)
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            .buttonStyle(.plain)
+            .padding(.top, 50)
+            .padding(.leading, 8)
+            .contextMenu {
                 Button {
                     showingDiagnostics = true
                 } label: {
-                    Image(systemName: "doc.text.magnifyingglass")
+                    Label("诊断日志", systemImage: "doc.text.magnifyingglass")
                 }
-                .accessibilityLabel("诊断日志")
             }
+        }
+        // 标题"内存卡回放" x=195 baseline y=88 18pt Bold
+        .overlay(alignment: .top) {
+            Text("内存卡回放")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                .frame(width: 200, height: 40)
+                .padding(.top, 52)
         }
         .onAppear {
             model.setHistoryVisible(true)
             guard !hasLoadedOnce, model.isAuthenticated else { return }
             hasLoadedOnce = true
             model.loadRecordings(for: selectedDate)
+        }
+        .sheet(isPresented: $showingDatePicker) {
+            NavigationView {
+                VStack(spacing: 0) {
+                    DatePicker(
+                        "选择日期",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .tint(AppTheme.brand)
+                    .padding(20)
+                    Button("确定") {
+                        showingDatePicker = false
+                    }
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 306, height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(AppTheme.brand)
+                    )
+                    .padding(.bottom, 24)
+                }
+                .navigationTitle("选择日期")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("取消") {
+                            showingDatePicker = false
+                        }
+                    }
+                }
+            }
         }
         .onDisappear {
             model.setHistoryVisible(false)
@@ -1439,6 +1879,28 @@ private struct HistoryView: View {
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "HH:mm:ss"
         return "\(formatter.string(from: recording.startDate)) – \(formatter.string(from: recording.endDate))"
+    }
+
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy 年 M 月 d 日"
+        return formatter.string(from: selectedDate)
+    }
+
+    private func formatClock(_ seconds: Int64) -> String {
+        guard seconds >= 0 else { return "00:00:00" }
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remaining = seconds % 60
+        return String(format: "%02lld:%02lld:%02lld", hours, minutes, remaining)
+    }
+
+    private func durationText(for recording: AijiaRecording) -> String {
+        let seconds = max(0, recording.endTime - recording.startTime)
+        let minutes = seconds / 60
+        let remainder = seconds % 60
+        return "\(minutes) 分 \(remainder) 秒"
     }
 }
 
@@ -1606,71 +2068,141 @@ private struct MediaLibraryView: View {
     @ObservedObject private var theme = ThemeStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var previewItem: MediaItem?
+    @State private var filter: MediaFilter = .all
+
+    private enum MediaFilter: String, CaseIterable {
+        case all = "全部"
+        case video = "录像"
+    }
+
+    private var visibleItems: [MediaItem] {
+        switch filter {
+        case .all: return library.items
+        case .video: return library.items.filter { $0.kind == .video }
+        }
+    }
 
     var body: some View {
-        Group {
-            if library.items.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 42))
-                        .foregroundStyle(.secondary)
-                    Text("暂无截图或录像")
-                        .font(.headline)
-                    Text("在直播画面点击截图或录像，内容会保存在这里。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(.systemGroupedBackground))
-            } else {
-                List {
-                    ForEach(library.items) { item in
-                        Button {
-                            previewItem = item
-                        } label: {
-                            MediaLibraryRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                library.delete(item)
-                            } label: {
-                                Label("删除", systemImage: "trash")
-                            }
+        ZStack {
+            AppTheme.pageBackgroundAdaptive
+                .ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // 分段控件:24,120,342,42 r=12;选中块:28,124,164,34 r=10
+                    HStack(spacing: 0) {
+                        ForEach(MediaFilter.allCases, id: \.self) { f in
                             Button {
-                                presentSystemShare(activityItems: [sharePayload(for: item)])
+                                filter = f
                             } label: {
-                                Label("分享", systemImage: "square.and.arrow.up")
+                                Text(f.rawValue)
+                                    .font(.system(size: 14, weight: f == filter ? .bold : .semibold))
+                                    .foregroundStyle(f == filter ? AppTheme.textPrimaryAdaptive : AppTheme.textSecondaryAdaptive)
+                                    .frame(width: 164, height: 34)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(f == filter ? AppTheme.cardFillAdaptive : Color.clear)
+                                    )
                             }
-                            .tint(AppTheme.accent)
-                        }
-                        .contextMenu {
-                            Button {
-                                presentSystemShare(activityItems: [sharePayload(for: item)])
-                            } label: {
-                                Label("分享", systemImage: "square.and.arrow.up")
-                            }
-                            Button(role: .destructive) {
-                                library.delete(item)
-                            } label: {
-                                Label("删除", systemImage: "trash")
-                            }
+                            .buttonStyle(.plain)
+                            .animation(.easeOut(duration: 0.15), value: filter)
                         }
                     }
+                    .frame(width: 342, height: 42)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(AppTheme.segFillAdaptive)
+                    )
+                    .padding(.top, 32)
+                    .padding(.horizontal, 24)
+
+                    if visibleItems.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 30))
+                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                            Text("暂无截图或录像")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                            Text("在直播画面点击截图或录像，内容会保存在这里。")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(width: 342)
+                        .padding(.top, 60)
+                    } else {
+                        // 媒体卡:24,184 起 342×110 r=20,步进 128
+                        VStack(spacing: 18) {
+                            ForEach(visibleItems) { item in
+                                Button {
+                                    previewItem = item
+                                } label: {
+                                    MediaLibraryCard(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button {
+                                        presentSystemShare(activityItems: [sharePayload(for: item)])
+                                    } label: {
+                                        Label("分享", systemImage: "square.and.arrow.up")
+                                    }
+                                    Button(role: .destructive) {
+                                        library.delete(item)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 24)
+                        .padding(.horizontal, 24)
+                    }
+
+                    // 底部提示:24,720,342,72 r=18
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("左滑：分享 / 删除")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                                .frame(height: 18, alignment: .bottomLeading)
+                            Text("保留现有本机文件管理逻辑")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                                .padding(.top, 4)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, 18)
+                    .frame(width: 342, height: 72)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(AppTheme.brandSoftAdaptive)
+                    )
+                    .padding(.top, 24)
+                    .padding(.horizontal, 24)
                 }
-                .listStyle(.insetGrouped)
+                .padding(.bottom, 32)
             }
         }
-        .tint(theme.accent.color)
-        .navigationTitle("媒体库")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("完成") {
-                    dismiss()
-                }
+        .toolbar(.hidden, for: .navigationBar)
+        // "完成" x=26 baseline y=88 15pt Semibold
+        .overlay(alignment: .topLeading) {
+            Button("完成") {
+                dismiss()
             }
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(AppTheme.textPrimaryAdaptive)
+            .frame(width: 60, height: 40)
+            .padding(.top, 50)
+            .padding(.leading, 8)
+        }
+        // 标题"媒体库" x=195 baseline y=88 18pt Bold
+        .overlay(alignment: .top) {
+            Text("媒体库")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                .frame(width: 200, height: 40)
+                .padding(.top, 52)
         }
         .sheet(item: $previewItem) { item in
             NavigationView {
@@ -1691,28 +2223,43 @@ private struct MediaLibraryView: View {
     }
 }
 
-private struct MediaLibraryRow: View {
+/// 媒体卡片:x=24 w=342 h=110 r=20,缩略图 w=92 h=82 r=15
+private struct MediaLibraryCard: View {
     let item: MediaItem
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 0) {
             thumbnail
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.fileName)
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Text(rowDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .frame(width: 92, height: 82)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.kind == .image ? "截图" : "录像")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(AppTheme.textPrimaryAdaptive)
+                    .frame(height: 20, alignment: .bottomLeading)
+                Text(dateText)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                    .padding(.top, 10)
+                Text(item.fileSizeText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                    .padding(.top, 4)
             }
-            Spacer()
+            .padding(.leading, 18)
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AppTheme.textSecondaryAdaptive)
+                .padding(.trailing, 20)
         }
-        .padding(.vertical, 2)
+        .frame(width: 342, height: 110)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.cardFillAdaptive)
+                .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     @ViewBuilder
@@ -1728,31 +2275,37 @@ private struct MediaLibraryRow: View {
             }
         case .video:
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(.secondarySystemBackground))
-                Image(systemName: "play.fill")
-                    .font(.title3)
-                    .foregroundStyle(AppTheme.accent)
+                LinearGradient(
+                    colors: [AppTheme.videoTop, AppTheme.videoMid, AppTheme.videoBottom],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.8))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppTheme.textPrimary)
+                }
             }
         }
     }
 
     private var placeholder: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color(.secondarySystemBackground))
+        RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .fill(AppTheme.fieldFillAdaptive)
             .overlay(
                 Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.textSecondaryAdaptive)
             )
     }
 
-    private var rowDetail: String {
+    private var dateText: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        let dateText = formatter.string(from: item.date)
-        let sizeText = item.fileSizeText
-        return sizeText.isEmpty ? dateText : "\(dateText) · \(sizeText)"
+        return formatter.string(from: item.date)
     }
 }
 
