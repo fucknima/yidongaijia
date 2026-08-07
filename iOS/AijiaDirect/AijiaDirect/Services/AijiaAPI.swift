@@ -11,10 +11,6 @@ import Security
 import Darwin
 #endif
 
-#if canImport(CommonCrypto)
-import CommonCrypto
-#endif
-
 struct AijiaCamera: Identifiable, Codable {
     let id: String
     let name: String
@@ -178,44 +174,6 @@ enum AijiaSigning {
         return md5(ordered + path + videoSignKey)
     }
 
-    /// AES-128-ECB (PKCS7) encryption with the key extracted from the
-    /// official binary; used for the IDMP SMS-login `token` field.
-    static func officialEncryptedToken(_ value: String) throws -> String {
-#if canImport(CommonCrypto)
-        let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
-        let inputBytes = Array(value.utf8)
-        var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
-        let outputCapacity = outputBytes.count
-        var outputLength = 0
-
-        let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
-            inputBytes.withUnsafeBytes { inputBuffer in
-                outputBytes.withUnsafeMutableBytes { outputBuffer in
-                    CCCrypt(
-                        CCOperation(kCCEncrypt),
-                        CCAlgorithm(kCCAlgorithmAES),
-                        CCOptions(kCCOptionPKCS7Padding | kCCOptionECBMode),
-                        keyBuffer.baseAddress,
-                        kCCKeySizeAES128,
-                        nil,
-                        inputBuffer.baseAddress,
-                        inputBytes.count,
-                        outputBuffer.baseAddress,
-                        outputCapacity,
-                        &outputLength
-                    )
-                }
-            }
-        }
-        guard status == kCCSuccess else {
-            throw AijiaAPIError.invalidResponse
-        }
-        return Data(outputBytes[..<outputLength]).base64EncodedString()
-#else
-        throw AijiaAPIError.invalidResponse
-#endif
-    }
-
     static func normalized(_ value: String) -> String {
         String(value.lowercased().filter { $0.isLetter || $0.isNumber })
     }
@@ -258,7 +216,9 @@ final class AijiaAPI: AijiaAPIClient {
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
     private static let successfulResponseCodes: Set<String> = ["0", "1000000"]
-    // Verified from the official HYAppPasswordLoginService SMS request.
+    // Verified from the official binary (IDMP SMS request).
+    private static let officialIDMPAppID = "01010810"
+    private static let officialSMSSourceID = "010108"
     private static let officialPhoneBrand = "苹果"
 
     private let phone: String
@@ -723,12 +683,12 @@ final class AijiaAPI: AijiaAPIClient {
     /// Logs in with phone number + SMS verification code.
     ///
     /// Verified against the official binary and by live probing: the IDMP
-    /// SMS login is `POST base/user/tokenvalidate`. The `token` field is the
-    /// AES-128-ECB encrypted validate code (key `CMCCHY1343CLKEBZ`): an
-    /// encrypted token reaches the login logic (invalid code returns
-    /// `103113 登录失败请重试`), while a plaintext token is rejected as an
-    /// invalid code (`5101007`) or system error (`5000001`). The device
-    /// identity fields follow the endpoint in the official strings table.
+    /// SMS login is `POST base/user/tokenvalidate` with a plaintext `token`
+    /// (the SMS validate code) plus the IDMP app/source identifiers and
+    /// device identity fields. An invalid code returns `5101007 验证码失效`,
+    /// rate limiting `2202033 同一用户验证码太频繁` (both prove the request
+    /// shape is accepted), and a valid code returns the base session
+    /// (passId + sessionId) used by the video-service login.
     private func loginBaseWithSmsCode() async throws {
         logger.info("API", "开始验证码登录 account=\(DiagnosticsLogger.maskPhone(phone))")
         guard let smsCode = smsCode, !smsCode.isEmpty else {
@@ -736,7 +696,7 @@ final class AijiaAPI: AijiaAPIClient {
         }
 
         let body: [String: Any] = [
-            "token": try AijiaSigning.officialEncryptedToken(smsCode),
+            "token": smsCode,
             "userPhone": phone,
             "deviceUuid": deviceID,
             "idfv": deviceID,
@@ -745,6 +705,11 @@ final class AijiaAPI: AijiaAPIClient {
             "isWifi": "1",
             "provCode": userSelectedProvCode,
             "cityCode": userSelectedCityCode,
+            "appId": Self.officialIDMPAppID,
+            "sourceId": Self.officialSMSSourceID,
+            "channelType": "cmcchejiaqin",
+            "loginType": "TERMINAL_LOGIN",
+            "tokenType": "SMS",
         ]
 
         var request = URLRequest(url: Self.smsCodeLoginURL)
