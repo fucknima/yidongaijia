@@ -45,6 +45,11 @@ struct ContentView: View {
         guard model.shouldPresentCameraSelection, !showingCameraSelection else { return }
         DiagnosticsLogger.shared.info("UI", "收到自动打开摄像头选择页请求，正在弹出选择页")
         model.consumeCameraSelectionPrompt()
+        // Pre-warm the first camera while the user is deciding so the chosen
+        // stream starts almost instantly (mirrors the official player).
+        if let first = model.cameras.first {
+            model.prewarm(for: first)
+        }
         showingCameraSelection = true
     }
 }

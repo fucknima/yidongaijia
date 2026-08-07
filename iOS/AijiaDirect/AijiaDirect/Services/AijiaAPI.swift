@@ -325,6 +325,64 @@ final class AijiaAPI: AijiaAPIClient {
         throw lastError
     }
 
+    /// Pre-warms the live session so the first frame appears quickly.
+    ///
+    /// Mirrors the official player flow: wake the camera from low power
+    /// (dcs/lowpower/device/wakeup) before pulling the stream address, then
+    /// resolve the live URL. The returned camera is fully authenticated
+    /// (video token + device token), so `openStream()` afterwards reuses it.
+    func prewarmStream() async throws -> AijiaStream {
+        logger.info("API", "预加载实时流")
+        if videoToken.isEmpty {
+            try await loginVideo()
+        }
+        if camera == nil {
+            let rawCameras = try await cameraList()
+            camera = try selectCamera(from: rawCameras)
+        }
+        guard var selectedCamera = camera else {
+            throw AijiaAPIError.emptyCameraList
+        }
+        if selectedCamera.jwtoken.isEmpty {
+            selectedCamera.jwtoken = try await deviceToken(for: selectedCamera)
+            camera = selectedCamera
+        }
+
+        // Wake the camera from low power before pulling the stream.
+        try? await wakeUpCamera(selectedCamera)
+
+        let liveURL = try await liveAddress(for: selectedCamera)
+        logger.info(
+            "API",
+            "预加载实时流成功 camera=\(DiagnosticsLogger.maskIdentifier(selectedCamera.macID)) url=\(DiagnosticsLogger.redactedURL(liveURL))"
+        )
+        return AijiaStream(camera: selectedCamera, url: liveURL)
+    }
+
+    /// Wakes the camera from low power. Best effort: failures are logged and
+    /// swallowed because the subsequent getLiveAddress also triggers a wake.
+    func wakeUpCamera(_ camera: AijiaCamera) async throws {
+        let endpoint = try endpoint(base: camera.baseURL, path: "/dcs/lowpower/device/wakeup")
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "nonce": timestamp + "gs08t",
+            "time": timestamp,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: endpoint.path
+        )
+
+        let request = signedGET(url: endpoint, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+            $0.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+        }
+        let payload = try await requestJSON(request)
+        try requireSuccess(in: payload, action: "唤醒摄像头")
+        logger.info("API", "摄像头唤醒成功 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
+    }
+
     func keepAlive() async throws {
         guard let camera = camera, !videoToken.isEmpty, !camera.jwtoken.isEmpty else {
             logger.warning("API", "保活跳过，会话或设备令牌不完整")

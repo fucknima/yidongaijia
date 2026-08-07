@@ -40,6 +40,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private var api: AijiaAPIClient?
     private var player: IJKFFMoviePlayerController?
+    private var prewarmTask: Task<Void, Never>?
+    private var prewarmedStream: AijiaStream?
+    private var prewarmCameraID = ""
     private var replayPlaybackStartTime: Int64?
     private var replaySeekTask: Task<Void, Never>?
     private var replaySeekGeneration = 0
@@ -242,7 +245,20 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 client.selectCamera(selected)
                 cameraSelector = selected.macID
                 selectedCameraID = selected.macID
-                let stream = try await client.openStream()
+
+                // Reuse the pre-warmed stream (camera already woken and the
+                // live address resolved) so the first frame appears quickly.
+                let stream: AijiaStream
+                if let warmed = self.prewarmedStream,
+                   warmed.camera.macID == selected.macID {
+                    stream = warmed
+                    self.prewarmedStream = nil
+                    self.prewarmCameraID = ""
+                    logger.info("PLAYER", "复用预加载实时流 camera=\(DiagnosticsLogger.maskIdentifier(selected.macID))")
+                } else {
+                    stream = try await client.openStream()
+                }
+
                 guard self.isCurrentPlaybackOperation(operationID),
                       self.shouldPlay,
                       self.api === client else { return }
@@ -301,7 +317,54 @@ final class PlayerViewModel: NSObject, ObservableObject {
         }
         _ = credentialStore.save(phone: phone.trimmingCharacters(in: .whitespacesAndNewlines), password: password, cameraSelector: camera.macID)
         credentialStore.setAutoConnectEnabled(true)
+
+        // If this camera is not pre-warmed yet, warm it now; start() will fall
+        // back to openStream() if the warm-up has not finished in time.
+        if prewarmCameraID != camera.macID {
+            prewarm(for: camera)
+        }
         start()
+    }
+
+    /// Pre-warms the live stream for the camera selection page.
+    ///
+    /// Mirrors the official player: while the user is deciding, wake the
+    /// camera, resolve the live address and (once a camera is picked) hand
+    /// the warmed stream to `start()` so the first frame appears quickly.
+    func prewarm(for camera: AijiaCamera) {
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPhone.isEmpty, rememberLogin, !password.isEmpty else { return }
+        guard prewarmCameraID != camera.macID else { return }
+
+        prewarmTask?.cancel()
+        prewarmCameraID = camera.macID
+        prewarmedStream = nil
+        logger.info("PLAYER", "预加载摄像头 camera=\(DiagnosticsLogger.maskIdentifier(camera.macID))")
+
+        prewarmTask = Task { [weak self] in
+            do {
+                let client = self?.makeAPIClient(trimmedPhone, password, "")
+                guard let client = client as? AijiaAPI else { return }
+                let stream = try await client.prewarmStream()
+                try Task.checkCancellation()
+                guard let self = self else { return }
+                guard self.prewarmCameraID == stream.camera.macID else { return }
+                self.prewarmedStream = stream
+                self.logger.info("PLAYER", "预加载完成 camera=\(DiagnosticsLogger.maskIdentifier(stream.camera.macID))")
+            } catch {
+                guard let self = self else { return }
+                self.prewarmCameraID = ""
+                self.logger.warning("PLAYER", "预加载失败 error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Clears the pre-warm state (e.g. on logout or stop).
+    private func clearPrewarm() {
+        prewarmTask?.cancel()
+        prewarmTask = nil
+        prewarmedStream = nil
+        prewarmCameraID = ""
     }
 
     func consumeCameraSelectionPrompt() {
@@ -328,6 +391,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         logger.info("PLAYER", "停止播放")
         shouldPlay = false
         reconnectInFlight = false
+        clearPrewarm()
         _ = beginPlaybackOperation()
         cancelRecordingsQuery()
         finishReplayIfNeeded()
@@ -1021,8 +1085,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
 
-        // Mirrors the official ijkplayer demo setup: default options
-        // (VideoToolbox hardware decode) plus a live-stream friendly cache.
+        // Mirrors the official ijkplayer configuration: hardware decode plus
+        // live-stream friendly buffering (small probe/buffer for fast first
+        // frame, keep-alive tolerant). These keys were extracted from the
+        // official binary (HYAF3DMixPlayer options).
         guard let options = IJKFFOptions.byDefault() else {
             status = "播放器初始化失败"
             hasError = true
@@ -1031,6 +1097,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
         }
         options.setPlayerOptionIntValue(300, forKey: "network-caching")
         options.setPlayerOptionIntValue(1, forKey: "infbuf")
+        options.setPlayerOptionIntValue(1, forKey: "packet-buffering")
+        options.setPlayerOptionIntValue(0, forKey: "flush_packets")
+        options.setPlayerOptionIntValue(1000, forKey: "analyzemaxduration")
+        options.setPlayerOptionIntValue(1024, forKey: "probesize")
         guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: options) else {
             status = "播放器初始化失败"
             hasError = true
@@ -1502,8 +1572,27 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if reason == IJKMPMovieFinishReason.playbackError.rawValue {
             isPlaying = false
             hasError = true
-            status = "播放器报告错误"
+            status = "播放器报告错误，正在重试…"
             logger.error("PLAYER", "IJK 播放错误 info=\(userInfoText)")
+            scheduleRetryPlay()
+        }
+    }
+
+    /// Auto-retries playback after a transient player error, mirroring the
+    /// official tryToReplayTimerAction behaviour. Bound to one retry so a
+    /// persistent failure surfaces to the user instead of looping forever.
+    private func scheduleRetryPlay() {
+        guard shouldPlay, !isReplay else { return }
+        guard !reconnectInFlight else { return }
+        reconnectInFlight = true
+        logger.info("PLAYER", "安排播放自动重试")
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self = self else { return }
+            self.reconnectInFlight = false
+            guard self.shouldPlay, self.api != nil, !self.isReplay else { return }
+            self.logger.info("PLAYER", "播放自动重试中")
+            self.start(allowCurrentCameraWhenNotRemembered: true)
         }
     }
 
