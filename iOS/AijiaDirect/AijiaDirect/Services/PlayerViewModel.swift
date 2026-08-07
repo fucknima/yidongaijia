@@ -75,6 +75,11 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private var playbackStateObserver: NSObjectProtocol?
     private var playbackFinishObserver: NSObjectProtocol?
     private var loadStateObserver: NSObjectProtocol?
+    /// Whether the live player has decoded its first frame. Screenshots and
+    /// recordings are gated on this: right after a connection the media
+    /// pipeline may not have produced a frame yet, and IJK returns an error
+    /// (-2) for snapshot/record in that window.
+    @Published private(set) var hasFirstFrame = false
     private let logger = DiagnosticsLogger.shared
     private let credentialStore: CredentialStoring
     private let makeAPIClient: (String, String?, String) -> AijiaAPIClient
@@ -542,6 +547,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
             hasError = true
             return
         }
+        guard hasFirstFrame else {
+            status = "画面尚未就绪，请稍后再截图"
+            hasError = true
+            logger.warning("MEDIA", "截图被拦截：首帧尚未解码")
+            return
+        }
 
         // IJK grabs the current decoded frame and converts it to a UIImage.
         guard let image = player.thumbnailImageAtCurrentTime() else {
@@ -586,6 +597,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private func startRecording() {
         guard let player = player, !isRecording else { return }
+        guard hasFirstFrame else {
+            status = "画面尚未就绪，请稍后再录像"
+            hasError = true
+            logger.warning("MEDIA", "录像被拦截：首帧尚未解码")
+            return
+        }
         // IJK tees input packets to the file inside the demuxer thread;
         // playback continues without interruption. The C record layer collects
         // VPS/SPS/PPS from the stream and writes the mp4 header only after the
@@ -1070,6 +1087,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     private func tearDownPlayer() {
+        hasFirstFrame = false
         _ = player?.stopRecord()
         player?.shutdown()
         player = nil
@@ -1599,6 +1617,17 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private func handleLoadStateChanged(_ notification: Notification) {
         guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
               currentPlayer === player else { return }
-        logger.info("PLAYER", "IJK 加载状态变化 loadState=\(currentPlayer.loadState.rawValue)")
+        let rawState = currentPlayer.loadState.rawValue
+        logger.info("PLAYER", "IJK 加载状态变化 loadState=\(rawState)")
+
+        // Playable/PlaythroughOK means the demuxer/decode pipeline has data
+        // ready to render, i.e. the first frame is available. Gate media
+        // capture on this so snapshot/record no longer race the first decoded
+        // frame (IJK returns -2 for both in that window).
+        let frameReady = rawState & (IJKMPMovieLoadStatePlayable.rawValue | IJKMPMovieLoadStatePlaythroughOK.rawValue) != 0
+        if frameReady, !hasFirstFrame {
+            hasFirstFrame = true
+            logger.info("MEDIA", "首帧已就绪，允许截图与录像")
+        }
     }
 }
