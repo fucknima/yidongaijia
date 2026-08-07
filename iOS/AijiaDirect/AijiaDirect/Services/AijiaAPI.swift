@@ -202,7 +202,11 @@ protocol AijiaAPIClient: AnyObject {
 
 final class AijiaAPI: AijiaAPIClient {
     private static let baseLoginURL = URL(string: "https://base.hjq.komect.com/base/user/passwdLogin")!
-    private static let sendSmsCodeURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/sendSmsCode")!
+    // Reverse-engineered send-code endpoint. Unlike user/uniAuth/sendSmsCode
+    // (which rejects with 5101001 "session校验失败" without a session) this
+    // one passes gateway validation without a session; exact parameters still
+    // need confirmation via packet capture of the official app.
+    private static let sendSmsCodeURL = URL(string: "https://base.hjq.komect.com/base/authentication/sendMsg")!
     private static let smsCodeLoginURL = URL(string: "https://base.hjq.komect.com/base/user/uniAuth/smsCodeLogin")!
     private static let defaultProvCode = "57"
     private static let defaultCityCode = "610400"
@@ -625,23 +629,25 @@ final class AijiaAPI: AijiaAPIClient {
         logger.info("API", "基础账号密码登录成功")
     }
 
-    /// Requests an SMS verification code for the account. The uniAuth
-    /// endpoint mirrors the official app's send-code flow; parameters may
-    /// need adjusting if the gateway rejects the minimal body.
+    /// Requests an SMS verification code for the account. The endpoint and
+    /// parameters are reverse-engineered from the official app; this may need
+    /// adjustment once the real request is captured (see diagnostics logs).
     func sendSmsCode() async throws {
         guard !phone.isEmpty else {
             throw AijiaAPIError.server(action: "发送验证码", message: "缺少手机号")
         }
 
         logger.info("API", "请求发送短信验证码 account=\(DiagnosticsLogger.maskPhone(phone))")
-        let body: [String: Any] = [
-            "userAccount": phone,
+
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "userAccount", value: phone),
         ]
 
         var request = URLRequest(url: Self.sendSmsCodeURL)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data((components.percentEncodedQuery ?? "").utf8)
 
         let (payload, response) = try await requestJSONWithResponse(request)
         let data = try requireData(in: payload, action: "发送验证码")
