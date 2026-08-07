@@ -1134,6 +1134,21 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if let host = activeSurfaceHost {
             attachPlayerView(to: host)
         }
+        // If the player reports playing before the first playback-state
+        // notification arrives, treat it as first-frame-ready right away.
+        if player.isPlaying() {
+            markFirstFrameReady()
+        }
+        // Belt-and-suspenders: live streams may report playing while the first
+        // frame is still being decoded. Re-check shortly after start.
+        let startedPlayer = player
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self = self, self.player === startedPlayer else { return }
+            if startedPlayer.isPlaying() || startedPlayer.playbackState == .playing {
+                self.markFirstFrameReady()
+            }
+        }
         player.prepareToPlay()
         player.play()
         scheduleNetworkSpeedTimer()
@@ -1563,6 +1578,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         case .playing:
             isPlaying = true
             hasError = false
+            markFirstFrameReady()
             if isReplay {
                 scheduleReplayProgressTimer()
             }
@@ -1621,13 +1637,22 @@ final class PlayerViewModel: NSObject, ObservableObject {
         logger.info("PLAYER", "IJK 加载状态变化 loadState=\(rawState)")
 
         // Playable/PlaythroughOK means the demuxer/decode pipeline has data
-        // ready to render, i.e. the first frame is available. Gate media
-        // capture on this so snapshot/record no longer race the first decoded
-        // frame (IJK returns -2 for both in that window).
+        // ready to render. Live streams with infbuf may stay in a state that
+        // does not surface these bits, so this is only an auxiliary signal;
+        // the authoritative first-frame signal is playbackState == .playing.
         let frameReady = rawState & (IJKMPMovieLoadState.playable.rawValue | IJKMPMovieLoadState.playthroughOK.rawValue) != 0
-        if frameReady, !hasFirstFrame {
-            hasFirstFrame = true
-            logger.info("MEDIA", "首帧已就绪，允许截图与录像")
+        if frameReady {
+            markFirstFrameReady()
         }
+    }
+
+    /// Records that the live player has decoded its first frame. Screenshots
+    /// and recordings are gated on this: right after a connection the media
+    /// pipeline may not have produced a frame yet, and IJK returns an error
+    /// (-2) for snapshot/record in that window.
+    private func markFirstFrameReady() {
+        guard !hasFirstFrame else { return }
+        hasFirstFrame = true
+        logger.info("MEDIA", "首帧已就绪，允许截图与录像")
     }
 }
