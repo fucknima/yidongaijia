@@ -75,6 +75,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private var playbackStateObserver: NSObjectProtocol?
     private var playbackFinishObserver: NSObjectProtocol?
     private var loadStateObserver: NSObjectProtocol?
+    private var naturalSizeObserver: NSObjectProtocol?
+    private var firstFrameProbeTask: Task<Void, Never>?
     /// Whether the live player has decoded its first frame. Screenshots and
     /// recordings are gated on this: right after a connection the media
     /// pipeline may not have produced a frame yet, and IJK returns an error
@@ -125,6 +127,9 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if let observer = loadStateObserver {
             center.removeObserver(observer)
         }
+        if let observer = naturalSizeObserver {
+            center.removeObserver(observer)
+        }
     }
 
     private func registerPlayerObservers() {
@@ -154,6 +159,15 @@ final class PlayerViewModel: NSObject, ObservableObject {
         ) { [weak self] notification in
             Task { @MainActor [weak self] in
                 self?.handleLoadStateChanged(notification)
+            }
+        }
+        naturalSizeObserver = center.addObserver(
+            forName: NSNotification.Name("IJKMPMovieNaturalSizeAvailable"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                self?.handleNaturalSizeAvailable(notification)
             }
         }
     }
@@ -542,26 +556,38 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     func captureSnapshot() {
-        guard let player = player, player.isPlaying(), !isReplay, !isRecording else {
+        guard let player = player, !isReplay, !isRecording else {
             status = isReplay ? "历史回放时不能截图" : "当前没有可截图的直播画面"
             hasError = true
             return
         }
-        guard hasFirstFrame else {
-            status = "画面尚未就绪，请稍后再截图"
-            hasError = true
-            logger.warning("MEDIA", "截图被拦截：首帧尚未解码")
-            return
+        // Wait briefly for the first decoded frame instead of failing when the
+        // user taps right after connect (IJK returns -2 for thumbnail in that
+        // window). The tap itself already gives the pipeline time to settle.
+        status = "正在截图…"
+        hasError = false
+        let targetPlayer = player
+        Task { @MainActor [weak self] in
+            var image: UIImage?
+            for _ in 0..<6 {
+                if let frame = targetPlayer.thumbnailImageAtCurrentTime() {
+                    image = frame
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            guard let self = self else { return }
+            guard let image = image else {
+                self.status = "截图失败，请重试"
+                self.hasError = true
+                self.logger.warning("MEDIA", "截图失败：无法获取当前帧")
+                return
+            }
+            self.saveSnapshotImage(image)
         }
+    }
 
-        // IJK grabs the current decoded frame and converts it to a UIImage.
-        guard let image = player.thumbnailImageAtCurrentTime() else {
-            status = "截图失败，请重试"
-            hasError = true
-            logger.warning("MEDIA", "截图失败：无法获取当前帧")
-            return
-        }
-
+    private func saveSnapshotImage(_ image: UIImage) {
         let destination = MediaLibrary.uniqueFileURL(
             in: MediaLibrary.capturesDirectory,
             baseName: "Live",
@@ -597,12 +623,32 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private func startRecording() {
         guard let player = player, !isRecording else { return }
-        guard hasFirstFrame else {
-            status = "画面尚未就绪，请稍后再录像"
-            hasError = true
-            logger.warning("MEDIA", "录像被拦截：首帧尚未解码")
-            return
+        // Wait briefly for the first decoded frame: starting the C record
+        // layer before frames arrive can leave the encoder without input.
+        if !hasFirstFrame {
+            status = "正在等待画面就绪…"
+            logger.debug("MEDIA", "录像等待首帧解码")
         }
+        let targetPlayer = player
+        Task { @MainActor [weak self] in
+            for _ in 0..<6 {
+                if self?.hasFirstFrame == true {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            guard let self = self, !self.isRecording else { return }
+            guard self.hasFirstFrame else {
+                self.status = "画面尚未就绪，请稍后再录像"
+                self.hasError = true
+                self.logger.warning("MEDIA", "录像被拦截：首帧尚未解码")
+                return
+            }
+            self.beginRecording(on: targetPlayer)
+        }
+    }
+
+    private func beginRecording(on player: IJKFFMoviePlayerController) {
         // IJK tees input packets to the file inside the demuxer thread;
         // playback continues without interruption. The C record layer collects
         // VPS/SPS/PPS from the stream and writes the mp4 header only after the
@@ -1088,6 +1134,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
     private func tearDownPlayer() {
         hasFirstFrame = false
+        firstFrameProbeTask?.cancel()
+        firstFrameProbeTask = nil
         _ = player?.stopRecord()
         player?.shutdown()
         player = nil
@@ -1139,16 +1187,10 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if player.isPlaying() {
             markFirstFrameReady()
         }
-        // Belt-and-suspenders: live streams may report playing while the first
-        // frame is still being decoded. Re-check shortly after start.
-        let startedPlayer = player
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard let self = self, self.player === startedPlayer else { return }
-            if startedPlayer.isPlaying() || startedPlayer.playbackState == .playing {
-                self.markFirstFrameReady()
-            }
-        }
+        // Live streams with infbuf may never set playbackState/.playing or a
+        // loadState Playable bit even though frames are being rendered. Poll
+        // for an actual decodable frame as the authoritative signal.
+        startFirstFrameProbe(for: player)
         player.prepareToPlay()
         player.play()
         scheduleNetworkSpeedTimer()
@@ -1639,9 +1681,22 @@ final class PlayerViewModel: NSObject, ObservableObject {
         // Playable/PlaythroughOK means the demuxer/decode pipeline has data
         // ready to render. Live streams with infbuf may stay in a state that
         // does not surface these bits, so this is only an auxiliary signal;
-        // the authoritative first-frame signal is playbackState == .playing.
+        // the authoritative first-frame signals are naturalSize notification
+        // and the thumbnail probe.
         let frameReady = rawState & (IJKMPMovieLoadState.playable.rawValue | IJKMPMovieLoadState.playthroughOK.rawValue) != 0
         if frameReady {
+            markFirstFrameReady()
+        }
+    }
+
+    /// Fired by IJK once the video dimensions are known, i.e. the first frame
+    /// has been decoded. This is the most direct "first frame ready" signal.
+    private func handleNaturalSizeAvailable(_ notification: Notification) {
+        guard let currentPlayer = notification.object as? IJKFFMoviePlayerController,
+              currentPlayer === player else { return }
+        let size = currentPlayer.naturalSize
+        logger.info("PLAYER", "IJK 视频尺寸就绪 size=\(size.width)x\(size.height)")
+        if size.width > 0, size.height > 0 {
             markFirstFrameReady()
         }
     }
@@ -1653,6 +1708,34 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private func markFirstFrameReady() {
         guard !hasFirstFrame else { return }
         hasFirstFrame = true
+        firstFrameProbeTask?.cancel()
+        firstFrameProbeTask = nil
         logger.info("MEDIA", "首帧已就绪，允许截图与录像")
+    }
+
+    /// Polls the player for an actual decodable frame. Live streams with
+    /// infbuf may keep playbackState/loadState away from the "ready" bits even
+    /// while rendering, so the only reliable signal is whether IJK can return
+    /// a thumbnail (the exact operation snapshot uses). Stops once ready or
+    /// after a generous timeout so a dead stream still releases the probe.
+    private func startFirstFrameProbe(for player: IJKFFMoviePlayerController) {
+        firstFrameProbeTask?.cancel()
+        firstFrameProbeTask = Task { @MainActor [weak self] in
+            var attempts = 0
+            while attempts < 30 {
+                guard let self = self else { return }
+                guard self.player === player else { return }
+                if self.hasFirstFrame { return }
+                // thumbnailImageAtCurrentTime is a synchronous decode; only
+                // probe while the pipeline looks active to avoid busy work.
+                if player.thumbnailImageAtCurrentTime() != nil {
+                    self.markFirstFrameReady()
+                    return
+                }
+                attempts += 1
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            self?.logger.warning("MEDIA", "首帧探测超时，未获得可解码帧")
+        }
     }
 }

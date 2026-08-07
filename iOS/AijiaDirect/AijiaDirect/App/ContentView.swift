@@ -533,8 +533,8 @@ private struct PlayerScreen: View {
                             ) {
                                 model.captureSnapshot()
                             }
-                            .disabled(!model.hasFirstFrame || model.isRecording)
-                            .opacity(model.hasFirstFrame && !model.isRecording ? 1 : 0.4)
+                            .disabled(!model.isPlaying || model.isRecording)
+                            .opacity(model.isPlaying && !model.isRecording ? 1 : 0.4)
                             MediaActionButton(
                                 icon: model.isRecording ? "stop.fill" : "record.circle",
                                 title: model.isRecording ? "停止录像" : "录像",
@@ -542,8 +542,8 @@ private struct PlayerScreen: View {
                             ) {
                                 model.toggleRecording()
                             }
-                            .disabled(!model.hasFirstFrame)
-                            .opacity(model.hasFirstFrame ? 1 : 0.4)
+                            .disabled(!model.isPlaying)
+                            .opacity(model.isPlaying ? 1 : 0.4)
                             MediaActionButton(
                                 icon: "photo.on.rectangle.angled",
                                 title: "媒体库",
