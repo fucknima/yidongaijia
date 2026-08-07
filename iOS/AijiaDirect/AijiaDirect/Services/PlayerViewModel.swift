@@ -1624,7 +1624,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         // ready to render, i.e. the first frame is available. Gate media
         // capture on this so snapshot/record no longer race the first decoded
         // frame (IJK returns -2 for both in that window).
-        let frameReady = rawState & (IJKMPMovieLoadStatePlayable.rawValue | IJKMPMovieLoadStatePlaythroughOK.rawValue) != 0
+        let frameReady = rawState & (IJKMPMovieLoadState.playable.rawValue | IJKMPMovieLoadState.playthroughOK.rawValue) != 0
         if frameReady, !hasFirstFrame {
             hasFirstFrame = true
             logger.info("MEDIA", "首帧已就绪，允许截图与录像")
