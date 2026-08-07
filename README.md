@@ -6,10 +6,20 @@
 
 当前只支持手机号和密码登录，短信验证码登录已经移除。
 
+## 功能
+
+- 实时预览与内存卡回放（支持拖动进度、云端跳转）
+- 云台控制
+- 直播截图与录像（本机录制，不打断播放）
+- 媒体库：截图与录像的预览、分享、删除
+- 8 种主题色选择
+- 诊断日志（分级筛选、脱敏导出）
+- 密码保存在 iOS 钥匙串
+
 ## 实现原理
 
 ```text
-SwiftUI 登录界面
+SwiftUI 界面
     ↓
 PlayerViewModel（主线程状态与任务管理）
     ↓
@@ -19,22 +29,27 @@ AijiaAPI（URLSession async/await）
     ↓
 设备 jwtoken → 实时/回放地址
     ↓
-MobileVLCKit 在 iPhone 本机解码播放
+IJKPlayer（ffmpeg）在 iPhone 本机解码播放
 ```
 
 1. 基础认证请求 `base.hjq.komect.com/base/user/passwdLogin`。密码不以明文放入请求，而是计算 MD5 和 `fetion.com.cn:密码` 的 SHA1，成功后取得 `passId` 与会话 Cookie。
 2. 视频服务登录请求 `video.komect.com/user/login/loginByHJQToken`，使用基础会话、手机号和 `passId` 换取视频服务令牌。
 3. 调用摄像头列表接口，根据 `mac_id`、名称或 ID 选择设备；设备缺少 `jwtoken` 时再请求设备令牌。
-4. 调用设备的实时地址接口，获得云端 MPEG-TS/H.265/AAC 地址，交给 MobileVLCKit 播放。
+4. 调用设备的实时地址接口，获得云端 MPEG-TS/H.265/AAC 地址，交给 IJKPlayer 播放。
 5. 播放期间定时保活；会话失效或网络失败时重新认证并重取地址。历史回放通过云端回放传输和跳转接口完成，云台控制也直接请求云端。
+
+播放器使用 fork 的 [IJKPlayer](https://github.com/bilibili/ijkplayer)（ffmpeg 3.4 + OpenSSL），并在 C 层加入了本地录像支持：录制时把输入流同时写入文件（不打断播放），实时收集 H.264/H.265 的 VPS/SPS/PPS 参数集后再写 MP4 头，保证录制的文件可正常解码播放。截图使用解码帧快照（`thumbnailImageAtCurrentTime`）。
 
 所有网络请求都在 `AijiaAPI` 中异步执行，`PlayerViewModel` 负责取消旧任务、避免过期任务覆盖新状态和驱动 SwiftUI。密码可选保存到 iOS 钥匙串，诊断日志会脱敏手机号、密码、令牌、Cookie、签名和 URL 参数。
 
 ## 构建
 
-`iOS/AijiaDirect/` 是唯一的源码工作树，GitHub Actions 直接从该目录构建，不再解压 ZIP 或复制覆盖文件。
+`iOS/AijiaDirect/` 是唯一的源码工作树；`third_party/` 存放 IJKPlayer fork 源码（含录像定制）。
 
-没有 Mac 时，在仓库的 **Actions** 页面运行 **Build AijiaDirect iOS IPA**。工作流会在 macOS runner 上安装 CocoaPods、编译未签名设备版并上传 `AijiaDirect-unsigned-ipa`。下载后需要用自己的 Apple ID 或开发者证书重新签名，未签名 IPA 不能直接安装。
+没有 Mac 时，在仓库的 **Actions** 页面运行：
+
+1. **Build IJKMediaFramework**（首次或 `third_party` 变更时）：在 macOS runner 上编译 ffmpeg（含 OpenSSL）、OpenSSL 与 IJKMediaFramework.framework（arm64），产物以 artifact 形式保存。
+2. **Build AijiaDirect iOS IPA**：下载最新的 IJKMediaFramework artifact，安装 CocoaPods，编译未签名设备版并上传 `AijiaDirect-unsigned-ipa`。下载后需要用自己的 Apple ID 或开发者证书重新签名，未签名 IPA 不能直接安装。
 
 在 Mac 上也可以直接打开：
 
@@ -47,8 +62,10 @@ open AijiaDirect.xcworkspace
 ## 目录
 
 - `iOS/AijiaDirect/`：完整 iOS 工程源码。
-- `.github/workflows/build-ios.yml`：直接编译工作树并上传 IPA 的工作流。
+- `third_party/`：IJKPlayer fork（`ijkmedia/` C 层源码、`ios/` 编译脚本与 Xcode 工程，含录像与参数集收集定制）。
+- `.github/workflows/build-ijk.yml`：编译 IJKMediaFramework 的工作流。
+- `.github/workflows/build-ios.yml`：编译并上传 IPA 的工作流。
 
 ## 开源许可
 
-本项目基于 [MIT License](LICENSE) 开源。
+本项目基于 [MIT License](LICENSE) 开源。播放器内核为 [IJKPlayer](https://github.com/bilibili/ijkplayer)（LGPL 2.1）定制版本。

@@ -547,8 +547,11 @@ final class PlayerViewModel: NSObject, ObservableObject {
         logger.info("MEDIA", "开始录像 file=\(destination.lastPathComponent)")
 
         // Verify that the file is actually being written shortly after start.
+        // The mp4 header is written once the stream's VPS/SPS/PPS arrive
+        // (typically within one GOP), so give it a couple of GOPs before
+        // declaring the recording failed.
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard let self = self,
                   self.isRecording,
                   self.recordingFileURL == destination else { return }
@@ -1035,6 +1038,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
         player.shouldAutoplay = true
+        player.scalingMode = .aspectFit
         self.player = player
         lastLoggedPlayerState = ""
         lastLoggedPlaybackSecond = -10

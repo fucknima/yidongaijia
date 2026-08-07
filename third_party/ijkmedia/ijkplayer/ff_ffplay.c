@@ -5088,7 +5088,9 @@ static void ffp_record_write_packet_l(FFPlayer *ffp, AVPacket *pkt, AVFormatCont
         /* Hold packets until the header is written; the muxer queues are not
          * usable before avformat_write_header. */
         ffp->record_packet_count++;
-        if (ffp_record_params_ready_l(ffp) || ffp->record_packet_count > 1500) {
+        /* Fallback: force the header after ~200 demuxed packets (~6s at
+         * 30fps) in case the stream never repeats its parameter sets. */
+        if (ffp_record_params_ready_l(ffp) || ffp->record_packet_count > 200) {
             /* Apply the collected VPS/SPS/PPS so the muxer can build a valid
              * hvcC/avcC instead of an empty one. */
             if (ffp->record_video_extradata && ffp->record_video_extradata_size > 0) {

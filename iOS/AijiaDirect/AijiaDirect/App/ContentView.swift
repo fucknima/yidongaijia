@@ -1624,6 +1624,7 @@ private struct IJKLocalPlayerView: UIViewRepresentable {
               let playerView = player.view else {
             return hostView
         }
+        player.scalingMode = .aspectFit
         playerView.frame = hostView.bounds
         playerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hostView.addSubview(playerView)
