@@ -185,6 +185,7 @@ enum AijiaSigning {
         let keyBytes = Array("CMCCHY1343CLKEBZ".utf8)
         let inputBytes = Array(value.utf8)
         var outputBytes = [UInt8](repeating: 0, count: inputBytes.count + kCCBlockSizeAES128)
+        let outputCapacity = outputBytes.count
         var outputLength = 0
 
         let status: CCCryptorStatus = keyBytes.withUnsafeBytes { keyBuffer in
@@ -200,7 +201,7 @@ enum AijiaSigning {
                         inputBuffer.baseAddress,
                         inputBytes.count,
                         outputBuffer.baseAddress,
-                        outputBytes.count,
+                        outputCapacity,
                         &outputLength
                     )
                 }
