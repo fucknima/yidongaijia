@@ -504,153 +504,203 @@ private struct PlayerScreen: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
-                                .font(.title3.weight(.semibold))
-                            Text(model.isLoading ? "正在连接云端…" : "移动爱家摄像头")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+            ZStack {
+                // 背景 #F7F8FA
+                Color(red: 0.969, green: 0.973, blue: 0.980)
+                    .ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // 顶部:标题(23pt Bold)+ 在线状态(13pt)+ 两个圆钮
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(model.cameraName.isEmpty ? "我的摄像头" : model.cameraName)
+                                    .font(.system(size: 23, weight: .bold))
+                                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                    .frame(height: 28, alignment: .bottomLeading)
+                                Text(model.isLoading ? "正在连接云端…" : "在线 · \(model.networkSpeedText)")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                                    .padding(.top, 6)
+                            }
+                            Spacer(minLength: 0)
+                            // 设备切换按钮:中心 (315,92) 直径36
+                            Button {
+                                showingCameraSelection = true
+                            } label: {
+                                Circle()
+                                    .fill(AppTheme.brandSoft)
+                                    .frame(width: 36, height: 36)
+                                    .overlay(
+                                        Image(systemName: "video.badge.plus")
+                                            .font(.system(size: 13, weight: .bold))
+                                            .foregroundStyle(AppTheme.brand)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 36, height: 36)
+                            // 更多按钮:中心 (354,92) 直径36
+                            Menu {
+                                Text("版本 \(AppVersionInfo.display)")
+                                CameraSelectionMenuButton(
+                                    model: model,
+                                    isPresented: $showingCameraSelection
+                                )
+                                Button {
+                                    DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
+                                    showingAbout = true
+                                } label: {
+                                    Label("关于", systemImage: "info.circle")
+                                }
+                                Button {
+                                    showingDiagnostics = true
+                                } label: {
+                                    Label("诊断日志", systemImage: "doc.text.magnifyingglass")
+                                }
+                                Button(role: .destructive) {
+                                    model.logout()
+                                } label: {
+                                    Label("退出并返回登录", systemImage: "rectangle.portrait.and.arrow.right")
+                                }
+                            } label: {
+                                Circle()
+                                    .fill(Color(red: 0.933, green: 0.949, blue: 0.969)) // #EEF2F7
+                                    .frame(width: 36, height: 36)
+                                    .overlay(
+                                        Image(systemName: "ellipsis")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundStyle(Color(red: 0.278, green: 0.333, blue: 0.412)) // #475569
+                                    )
+                            }
+                            .frame(width: 36, height: 36)
                         }
-                        Spacer()
-                        StatusPill(model: model)
-                    }
+                        .frame(width: 342, height: 64)
+                        .padding(.top, 34)
+                        .padding(.horizontal, 24)
 
-                    // SwiftUI may replace this host during presentation, but
-                    // the model keeps one persistent player view throughout.
-                    if model.streamURL != nil, !model.isReplay {
-                        PlayerSurface(model: model) {
-                            showingFullscreen = true
-                        }
+                        // 视频容器:x=18 y=140 w=354 h=204 r=22
+                        LiveVideoPanel(
+                            model: model,
+                            onFullscreen: { showingFullscreen = true }
+                        )
+                        .frame(width: 354, height: 204)
+                        .padding(.top, 12)
+                        .padding(.horizontal, 18)
 
-                        HStack(spacing: 12) {
-                            MediaActionButton(
+                        // 三个操作按钮:中心 (70/182/294, 392) 圆直径60
+                        HStack(spacing: 0) {
+                            RoundActionButton(
                                 icon: "camera.fill",
                                 title: "截图",
-                                tint: AppTheme.accent
+                                isEnabled: model.isPlaying && !model.isRecording
                             ) {
                                 model.captureSnapshot()
                             }
-                            .disabled(!model.isPlaying || model.isRecording)
-                            .opacity(model.isPlaying && !model.isRecording ? 1 : 0.4)
-                            MediaActionButton(
+                            .frame(width: 112, height: 76)
+                            RoundActionButton(
                                 icon: model.isRecording ? "stop.fill" : "record.circle",
                                 title: model.isRecording ? "停止录像" : "录像",
-                                tint: model.isRecording ? .red : AppTheme.accent
+                                isEnabled: model.isPlaying,
+                                tint: model.isRecording ? .red : AppTheme.brand
                             ) {
                                 model.toggleRecording()
                             }
-                            .disabled(!model.isPlaying)
-                            .opacity(model.isPlaying ? 1 : 0.4)
-                            MediaActionButton(
-                                icon: "photo.on.rectangle.angled",
+                            .frame(width: 112, height: 76)
+                            RoundActionButton(
+                                icon: "square.grid.2x2.fill",
                                 title: "媒体库",
-                                tint: AppTheme.accent
+                                isEnabled: true
                             ) {
                                 showingMediaLibrary = true
                             }
+                            .frame(width: 112, height: 76)
+                        }
+                        .padding(.top, 14)
+
+                        // 状态条:x=24 y=460 w=342 h=46 r=14
+                        HStack(spacing: 0) {
+                            Circle()
+                                .fill(AppTheme.brand)
+                                .frame(width: 10, height: 10)
+                                .padding(.leading, 24)
+                            Text("直播稳定 · HEVC")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                .padding(.leading, 14)
+                            Spacer(minLength: 0)
+                            Button {
+                                model.stop()
+                            } label: {
+                                Text("停止")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 22)
+                        }
+                        .frame(width: 342, height: 46)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(AppTheme.brandSoft)
+                        )
+                        .padding(.top, 14)
+                        .padding(.horizontal, 24)
+
+                        if !model.status.isEmpty {
+                            StatusText(model: model)
+                                .padding(.top, 12)
+                                .padding(.horizontal, 24)
                         }
 
-                        Button(role: .destructive) {
-                            model.stop()
-                        } label: {
-                            Label(model.isReplay ? "停止回放" : "停止播放", systemImage: "stop.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: model.hasError ? "wifi.exclamationmark" : "video")
-                                .font(.system(size: 40))
-                                .foregroundStyle(model.hasError ? .red : AppTheme.accent)
-                            Text(model.isLoading ? "正在获取视频地址" : "暂时没有播放画面")
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.secondary)
+                        // 云台卡片:x=24 y=526 w=342 h=190 r=24
+                        if model.isAuthenticated {
+                            PTZControlPanel(model: model)
+                                .frame(width: 342, height: 190)
+                                .padding(.top, 16)
+                                .padding(.horizontal, 24)
 
-                            if !model.isLoading {
-                                Button("重新连接") {
-                                    model.start()
+                            // 回放入口:x=24 y=736 w=342 h=64 r=18
+                            NavigationLink(
+                                destination: HistoryView(model: model),
+                                isActive: $showingHistory
+                            ) {
+                                HStack(spacing: 0) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(AppTheme.brandSoft)
+                                            .frame(width: 40, height: 40)
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundStyle(AppTheme.brand)
+                                    }
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text("内存卡回放")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                                            .frame(height: 20, alignment: .bottomLeading)
+                                        Text("按日期查看历史录像")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                                            .padding(.top, 5)
+                                    }
+                                    .padding(.leading, 16)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.trailing, 20)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(AppTheme.accent)
+                                .frame(width: 342, height: 64)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .fill(.white)
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .padding(.top, 10)
+                            .padding(.horizontal, 24)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 56)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                                .fill(Color(.secondarySystemGroupedBackground))
-                        )
                     }
-
-                    StatusText(model: model)
-
-                    if model.isAuthenticated {
-                        PTZControlPanel(model: model)
-
-                        NavigationLink(
-                            destination: HistoryView(model: model),
-                            isActive: $showingHistory
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .font(.title3)
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 30)
-                                Text("内存卡回放")
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .padding(16)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                                .fill(Color(.secondarySystemGroupedBackground))
-                        )
-                    }
-                }
-                .padding()
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("播放")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        showingDiagnostics = true
-                    } label: {
-                        Image(systemName: "doc.text.magnifyingglass")
-                    }
-                    .accessibilityLabel("诊断日志")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Text("版本 \(AppVersionInfo.display)")
-                        CameraSelectionMenuButton(
-                            model: model,
-                            isPresented: $showingCameraSelection
-                        )
-                        Button {
-                            DiagnosticsLogger.shared.info("UI", "用户打开关于页面")
-                            showingAbout = true
-                        } label: {
-                            Label("关于", systemImage: "info.circle")
-                        }
-                        Button(role: .destructive) {
-                            model.logout()
-                        } label: {
-                            Label("退出并返回登录", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .accessibilityLabel("更多操作")
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -679,6 +729,94 @@ private struct PlayerScreen: View {
         }) {
             FullscreenPlayerView(model: model)
         }
+    }
+}
+
+/// 视频容器:x=18 y=140 w=354 h=204 r=22,渐变背景 + LIVE 标签 + 全屏按钮
+private struct LiveVideoPanel: View {
+    @ObservedObject var model: PlayerViewModel
+    let onFullscreen: () -> Void
+
+    var body: some View {
+        ZStack {
+            // 渐变背景(videoGrad)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.145, green: 0.192, blue: 0.239),  // #25313D
+                    Color(red: 0.067, green: 0.094, blue: 0.153),  // #111827
+                    Color(red: 0.043, green: 0.071, blue: 0.125),  // #0B1220
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // 有流时叠加播放器
+            if model.streamURL != nil, !model.isReplay {
+                IJKPlayerView(model: model)
+                    .id(model.playerViewID)
+                    .frame(width: 354, height: 204)
+            }
+
+            // LIVE 标签:30,154,72,28 r=14
+            Text("LIVE")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 72, height: 28)
+                .background(Capsule().fill(Color.black.opacity(0.4)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, 14)
+                .padding(.leading, 12)
+
+            // 全屏按钮:290,292,58,34 r=17
+            Button(action: onFullscreen) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 58, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                            .fill(Color.black.opacity(0.47))
+                    )
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 6)
+            .padding(.bottom, 6)
+        }
+        .frame(width: 354, height: 204)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+}
+
+/// 圆形操作按钮:圆直径 60,标签 baseline y=438 14pt Semibold
+private struct RoundActionButton: View {
+    let icon: String
+    let title: String
+    var isEnabled: Bool = true
+    var tint: Color = AppTheme.brand
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 60, height: 60)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(isEnabled ? tint : Color.gray.opacity(0.5))
+                    )
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(isEnabled ? Color(red: 0.059, green: 0.090, blue: 0.078) : .secondary)
+                    .frame(height: 18)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(title)
     }
 }
 
@@ -1054,31 +1192,63 @@ private struct PTZControlPanel: View {
     }
 
     var body: some View {
-        AppTheme.card {
-            VStack(spacing: 14) {
+        VStack(spacing: 0) {
+            // 标题:baseline y=558,17pt Bold
+            HStack(alignment: .firstTextBaseline) {
                 Text("云台控制")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(spacing: 10) {
-                    PTZDirectionButton(direction: .up, model: model)
-
-                    HStack(spacing: 10) {
-                        PTZDirectionButton(direction: .left, model: model)
-
-                        Image(systemName: "camera.metering.center.weighted")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 56, height: 44)
-
-                        PTZDirectionButton(direction: .right, model: model)
-                    }
-
-                    PTZDirectionButton(direction: .down, model: model)
-                }
-                .frame(maxWidth: .infinity)
-                .disabled(isDisabled)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(red: 0.059, green: 0.090, blue: 0.078))
+                Spacer(minLength: 0)
+                Text("按一下移动")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
             }
+            .padding(.leading, 18)
+            .padding(.trailing, 18)
+            .padding(.top, 14)
+            .frame(height: 24)
+
+            // 方向键区:相对卡片内坐标
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: 342, height: 190)
+                // 上:(195,588) 直径46 → 卡片内中心 (171,62)
+                PTZDirectionButton(direction: .up, model: model)
+                    .frame(width: 46, height: 46)
+                    .position(x: 171, y: 62)
+                // 左:(145,636) → (121,110)
+                PTZDirectionButton(direction: .left, model: model)
+                    .frame(width: 46, height: 46)
+                    .position(x: 121, y: 110)
+                // 中:(195,636) 直径56 → (171,110)
+                Circle()
+                    .fill(Color(red: 0.910, green: 0.933, blue: 0.949)) // #E8EEF2
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Image(systemName: "camera.metering.center.weighted")
+                            .font(.system(size: 17))
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.545))
+                    )
+                    .position(x: 171, y: 110)
+                // 右:(245,636) → (221,110)
+                PTZDirectionButton(direction: .right, model: model)
+                    .frame(width: 46, height: 46)
+                    .position(x: 221, y: 110)
+                // 下:(195,684) → (171,158)
+                PTZDirectionButton(direction: .down, model: model)
+                    .frame(width: 46, height: 46)
+                    .position(x: 171, y: 158)
+            }
+            .frame(width: 342, height: 190)
+            .disabled(isDisabled)
         }
+        .frame(width: 342, height: 190)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.white)
+                .shadow(color: Color(red: 0.059, green: 0.090, blue: 0.078).opacity(0.08), radius: 14, y: 8)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
 
@@ -1090,13 +1260,13 @@ private struct PTZDirectionButton: View {
         Button {
             model.controlPTZ(direction)
         } label: {
-            Image(systemName: direction.systemImage)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppTheme.accent)
-                .frame(width: 52, height: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(.secondarySystemBackground))
+            Circle()
+                .fill(Color(red: 0.941, green: 0.969, blue: 0.961)) // #F0F7F5
+                .frame(width: 46, height: 46)
+                .overlay(
+                    Image(systemName: direction.systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AppTheme.brand)
                 )
         }
         .buttonStyle(.plain)
