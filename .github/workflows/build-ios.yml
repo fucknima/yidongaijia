@@ -25,16 +25,12 @@ jobs:
 
       - name: Resolve next app version
         working-directory: iOS/AijiaDirect
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          ENCODED_MAIN_VERSION=$(gh api \
-            "repos/${{ github.repository }}/contents/.github/ios-version.txt?ref=main" \
-            --jq '.content // empty' 2>/dev/null || true)
+          CURRENT_VERSION=$(curl -fsSL \
+            "https://raw.githubusercontent.com/${{ github.repository }}/main/.github/ios-version.txt" \
+            2>/dev/null | tr -d '[:space:]' || true)
 
-          if [ -n "$ENCODED_MAIN_VERSION" ]; then
-            CURRENT_VERSION=$(printf '%s' "$ENCODED_MAIN_VERSION" | tr -d '\n' | base64 -D | tr -d '[:space:]')
-          else
+          if [ -z "$CURRENT_VERSION" ]; then
             CURRENT_VERSION=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/.github/ios-version.txt")
           fi
 
