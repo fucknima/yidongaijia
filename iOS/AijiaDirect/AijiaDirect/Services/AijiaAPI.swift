@@ -120,6 +120,23 @@ struct AijiaRecording: Identifiable, Equatable {
     }
 }
 
+struct AijiaCloudSession {
+    let sessionID: String
+    let playlistURL: URL
+    let startTime: Int64
+    let endTime: Int64
+    let expireTime: Int64
+    let duration: Int
+    let channelID: String
+}
+
+struct AijiaCloudSegment: Identifiable, Equatable {
+    let url: URL
+    let duration: Double
+
+    var id: String { url.absoluteString }
+}
+
 enum AijiaAPIError: LocalizedError {
     case invalidResponse
     case httpStatus(Int)
@@ -198,6 +215,9 @@ protocol AijiaAPIClient: AnyObject {
     func seekRecording(at timestamp: Int64) async throws
     func keepReplayAlive() async throws
     func stopReplay() async throws
+    func cloudCalendar(startTime: Int64, endTime: Int64) async throws -> [Int64]
+    func createCloudPlayback(startTime: Int64, endTime: Int64) async throws -> AijiaCloudSession
+    func cloudPlaylist(url: URL) async throws -> [AijiaCloudSegment]
 }
 
 final class AijiaAPI: AijiaAPIClient {
@@ -207,6 +227,9 @@ final class AijiaAPI: AijiaAPIClient {
     private static let videoLoginURL = URL(string: "https://video.komect.com/user/login/loginByHJQToken")!
     private static let cameraListURL = URL(string: "https://video.komect.com/camera/core/api/bind/queryList")!
     private static let cameraTokenURL = URL(string: "https://video.komect.com/camera/auth/getToken")!
+    private static let cloudCalendarURL = URL(string: "https://video.komect.com/alarm/alarms/calendar")!
+    private static let cloudPlaybackCreateURL = URL(string: "https://video.komect.com/camera/playback/createPlayback")!
+    private static let cmdsUserAgent = "CMDS(git hash:123,branch:456,build time:Jun  8 2026 14:15:11)"
     private static let successfulResponseCodes: Set<String> = ["0", "1000000"]
 
     private let phone: String
@@ -617,6 +640,146 @@ final class AijiaAPI: AijiaAPIClient {
         let payload = try await requestJSON(request)
         try requireSuccess(in: payload, action: "停止历史录像")
         logger.info("REPLAY", "历史录像已停止")
+    }
+
+    // MARK: - 云端录像(云回放)
+
+    /// Returns the days (epoch seconds) that have cloud recordings, from the
+    /// same calendar endpoint the official client uses on the cloud playback
+    /// page. The signing rule is the standard video signature (verified
+    /// against a captured request).
+    func cloudCalendar(startTime: Int64, endTime: Int64) async throws -> [Int64] {
+        if videoToken.isEmpty {
+            try await loginVideo()
+        }
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "alarm_type": "",
+            "category": "1",
+            "dev_sn": authenticatedCamera().macID,
+            "end_time": String(endTime),
+            "nonce": requestNonce(timestamp: timestamp),
+            "start_time": String(startTime),
+            "time": timestamp,
+            "user_id": phone,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: Self.cloudCalendarURL.path
+        )
+
+        let request = signedGET(url: Self.cloudCalendarURL, parameters: parameters) {
+            $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+        }
+        let payload = try await requestJSON(request)
+        let data = try requireData(in: payload, action: "读取云录像日历")
+        let days = (data as? [NSNumber])?.map(\.int64Value) ?? []
+        logger.info("CLOUD", "云录像日历读取成功 days=\(days)")
+        return days.sorted()
+    }
+
+    /// Opens a cloud playback session. Unlike the TF-card replay path this is
+    /// a plain POST with every parameter in the query string (signed over all
+    /// of them) and an empty body; the response carries a session UUID plus a
+    /// pre-signed m3u8 URL, so no media signing is needed on our side.
+    func createCloudPlayback(startTime: Int64, endTime: Int64) async throws -> AijiaCloudSession {
+        let camera = try authenticatedCamera()
+        let timestamp = currentTimestamp()
+        var parameters = [
+            "macId": camera.macID,
+            "userId": phone,
+            "startTime": String(startTime),
+            "endTime": String(endTime),
+            "nonce": timestamp + "gs08t",
+            "time": timestamp,
+        ]
+        parameters["sign"] = AijiaSigning.videoSignature(
+            parameters: parameters,
+            path: Self.cloudPlaybackCreateURL.path
+        )
+
+        var request = URLRequest(url: Self.cloudPlaybackCreateURL)
+        request.httpMethod = "POST"
+        applyClientHeaders(to: &request, timestamp: timestamp)
+        request.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
+        request.setValue(camera.jwtoken, forHTTPHeaderField: "AuthorizationJwtoken")
+
+        let payload = try await requestJSON(request)
+        let data = try requireData(in: payload, action: "创建云回放会话")
+        guard let dictionary = data as? [String: Any] else {
+            throw AijiaAPIError.invalidResponse
+        }
+
+        let sessionID = stringValue(dictionary["session"])
+        let rawURL = stringValue(dictionary["url"])
+        guard !sessionID.isEmpty, let playlistURL = URL(string: rawURL) else {
+            throw AijiaAPIError.invalidResponse
+        }
+        let session = AijiaCloudSession(
+            sessionID: sessionID,
+            playlistURL: playlistURL,
+            startTime: int64Value(dictionary["start"]) ?? startTime,
+            endTime: int64Value(dictionary["end"]) ?? endTime,
+            expireTime: int64Value(dictionary["expire"]) ?? 0,
+            duration: Int(int64Value(dictionary["duration"]) ?? 0),
+            channelID: stringValue(dictionary["channelId"])
+        )
+        logger.info(
+            "CLOUD",
+            "云回放会话创建成功 session=\(DiagnosticsLogger.maskIdentifier(sessionID)) segmentsUrl=\(DiagnosticsLogger.redactedURL(playlistURL))"
+        )
+        return session
+    }
+
+    /// Fetches the HLS playlist of a cloud playback session and returns the
+    /// TS segment URLs (each carries its own token plus the session).
+    func cloudPlaylist(url: URL) async throws -> [AijiaCloudSegment] {
+        var request = URLRequest(url: url)
+        request.setValue(Self.cmdsUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw AijiaAPIError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AijiaAPIError.invalidResponse
+        }
+
+        var segments: [AijiaCloudSegment] = []
+        var pendingDuration: Double = 0
+        for line in text.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#EXTINF:") {
+                let value = trimmed.dropFirst("#EXTINF:".count)
+                pendingDuration = Double(value.prefix(while: { $0 != "," })) ?? 0
+            } else if !trimmed.isEmpty, !trimmed.hasPrefix("#") {
+                if let url = URL(string: String(trimmed)) {
+                    segments.append(AijiaCloudSegment(url: url, duration: pendingDuration))
+                }
+                pendingDuration = 0
+            }
+        }
+        logger.info("CLOUD", "云回放分段解析成功 count=\(segments.count)")
+        guard !segments.isEmpty else {
+            throw AijiaAPIError.invalidResponse
+        }
+        return segments
+    }
+
+    /// The media hosts require the CMDS user agent; this is what the official
+    /// player uses when pulling the MPEG-TS stream.
+    func fetchCloudTS(url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.setValue(Self.cmdsUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw AijiaAPIError.httpStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        return data
     }
 
     private func authenticatedCamera() throws -> AijiaCamera {

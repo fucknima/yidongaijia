@@ -354,4 +354,24 @@ private final class StubAijiaAPIClient: AijiaAPIClient {
     func keepReplayAlive() async throws {}
 
     func stopReplay() async throws {}
+
+    func cloudCalendar(startTime: Int64, endTime: Int64) async throws -> [Int64] {
+        []
+    }
+
+    func createCloudPlayback(startTime: Int64, endTime: Int64) async throws -> AijiaCloudSession {
+        AijiaCloudSession(
+            sessionID: "stub-session",
+            playlistURL: URL(string: "https://example.test/playlist.m3u8")!,
+            startTime: startTime,
+            endTime: endTime,
+            expireTime: 0,
+            duration: 0,
+            channelID: ""
+        )
+    }
+
+    func cloudPlaylist(url: URL) async throws -> [AijiaCloudSegment] {
+        []
+    }
 }
