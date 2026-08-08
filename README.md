@@ -9,6 +9,7 @@
 ## 功能
 
 - 实时预览与内存卡回放（支持拖动进度、云端跳转）
+- **云回放**（云端录像）：30 天日历标记有录像的日期，按天列出录像片段，点击播放；自动合并相邻分段、自动恢复实时画面
 - 云台控制
 - 直播截图与录像（本机录制，不打断播放）
 - 媒体库：截图与录像的预览、分享、删除
@@ -37,10 +38,13 @@ IJKPlayer（ffmpeg）在 iPhone 本机解码播放
 3. 调用摄像头列表接口，根据 `mac_id`、名称或 ID 选择设备；设备缺少 `jwtoken` 时再请求设备令牌。
 4. 调用设备的实时地址接口，获得云端 MPEG-TS/H.265/AAC 地址，交给 IJKPlayer 播放。
 5. 播放期间定时保活；会话失效或网络失败时重新认证并重取地址。历史回放通过云端回放传输和跳转接口完成，云台控制也直接请求云端。
+6. 云回放：`GET /alarm/alarms/calendar` 读取有云端录像的日期；`POST /camera/playback/createPlayback`（全部参数放 query、空 body、签名覆盖全部参数）创建播放会话，返回 session 与预签名 m3u8；播放器按 HLS 拉取分段（MPEG-TS/H.265），切换片段时重新建会话并自动补齐窗口对齐分段边界。
 
 播放器使用 fork 的 [IJKPlayer](https://github.com/bilibili/ijkplayer)（ffmpeg 3.4 + OpenSSL），并在 C 层加入了本地录像支持：录制时把输入流同时写入文件（不打断播放），实时收集 H.264/H.265 的 VPS/SPS/PPS 参数集后再写 MP4 头，保证录制的文件可正常解码播放。截图使用解码帧快照（`thumbnailImageAtCurrentTime`）。
 
 所有网络请求都在 `AijiaAPI` 中异步执行，`PlayerViewModel` 负责取消旧任务、避免过期任务覆盖新状态和驱动 SwiftUI。密码可选保存到 iOS 钥匙串，诊断日志会脱敏手机号、密码、令牌、Cookie、签名和 URL 参数。
+
+云回放接口的逆向过程、签名规则与调试经验记录在 [docs/CLOUD_PLAYBACK_REVERSE_ENGINEERING.md](docs/CLOUD_PLAYBACK_REVERSE_ENGINEERING.md)。
 
 ## 构建
 
@@ -63,6 +67,7 @@ open AijiaDirect.xcworkspace
 
 - `iOS/AijiaDirect/`：完整 iOS 工程源码。
 - `third_party/`：IJKPlayer fork（`ijkmedia/` C 层源码、`ios/` 编译脚本与 Xcode 工程，含录像与参数集收集定制）。
+- `docs/CLOUD_PLAYBACK_REVERSE_ENGINEERING.md`：云回放接口逆向与实现笔记。
 - `.github/workflows/build-ijk.yml`：编译 IJKMediaFramework 的工作流。
 - `.github/workflows/build-ios.yml`：编译并上传 IPA 的工作流。
 
