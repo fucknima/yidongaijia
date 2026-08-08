@@ -7,6 +7,10 @@ on:
       - "iOS/**"
       - ".github/workflows/build-ios.yml"
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   build:
     runs-on: macos-15-intel
@@ -31,21 +35,26 @@ jobs:
           echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
           echo "Using version ${short_version}, build ${build_version}"
 
-      - name: Resolve latest IJK framework build
+      - name: Resolve reusable IJK framework artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUN_ID=$(gh run list --repo "${{ github.repository }}" \
-            --workflow build-ijk.yml \
-            --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId')
-          if [ -z "$RUN_ID" ]; then
-            echo "No successful IJKMediaFramework build found" >&2
-            exit 1
-          fi
-          echo "IJK_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          RUN_ID=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/actions/artifacts?name=IJKMediaFramework&per_page=100" \
+            --jq '[.artifacts[] | select(.expired == false)][0].workflow_run.id // empty')
 
-      - name: Download IJKMediaFramework
+          if [ -n "$RUN_ID" ]; then
+            echo "Found reusable IJKMediaFramework artifact from run $RUN_ID"
+            echo "IJK_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+            echo "IJK_CACHE_HIT=true" >> "$GITHUB_ENV"
+          else
+            echo "No reusable IJKMediaFramework artifact found; building it in this run"
+            echo "IJK_CACHE_HIT=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download cached IJKMediaFramework
+        if: env.IJK_CACHE_HIT == 'true'
         uses: actions/download-artifact@v4
         with:
           name: IJKMediaFramework
@@ -53,12 +62,57 @@ jobs:
           github-token: ${{ github.token }}
           path: iOS/AijiaDirect/IJKMediaFramework
 
-      - name: Unpack IJKMediaFramework
+      - name: Unpack cached IJKMediaFramework
+        if: env.IJK_CACHE_HIT == 'true'
         working-directory: iOS/AijiaDirect/IJKMediaFramework
         run: |
           unzip -q -o IJKMediaFramework.framework.zip
           rm -f IJKMediaFramework.framework.zip
           test -d IJKMediaFramework.framework
+
+      - name: Build IJKMediaFramework when cache is missing
+        if: env.IJK_CACHE_HIT != 'true'
+        run: |
+          chmod +x third_party/init-ios.sh third_party/init-ios-openssl.sh third_party/version.sh \
+            third_party/tools/*.sh third_party/ios/*.sh third_party/ios/tools/*.sh
+          rm -f third_party/config/module.sh
+          ln -s module-lite.sh third_party/config/module.sh
+
+          cd third_party
+          ./init-ios.sh all
+          ./init-ios-openssl.sh
+
+          cd ios
+          ./compile-openssl.sh arm64
+          ./compile-ffmpeg.sh arm64
+
+          cd IJKMediaPlayer
+          xcodebuild \
+            -project IJKMediaPlayer.xcodeproj \
+            -scheme IJKMediaFramework \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            build
+
+          FRAMEWORK_DIR="$GITHUB_WORKSPACE/third_party/ios/IJKMediaPlayer/build/Build/Products/Release-iphoneos"
+          test -d "$FRAMEWORK_DIR/IJKMediaFramework.framework"
+
+          DEST_DIR="$GITHUB_WORKSPACE/iOS/AijiaDirect/IJKMediaFramework"
+          rm -rf "$DEST_DIR/IJKMediaFramework.framework"
+          cp -R "$FRAMEWORK_DIR/IJKMediaFramework.framework" "$DEST_DIR/"
+
+          cd "$DEST_DIR"
+          zip -qry IJKMediaFramework.framework.zip IJKMediaFramework.framework
+          test -f IJKMediaFramework.framework.zip
+
+      - name: Cache newly built IJKMediaFramework
+        if: env.IJK_CACHE_HIT != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IJKMediaFramework
+          path: iOS/AijiaDirect/IJKMediaFramework/IJKMediaFramework.framework.zip
+          retention-days: 90
 
       - name: Install CocoaPods and dependencies
         working-directory: iOS/AijiaDirect
