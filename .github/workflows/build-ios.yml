@@ -9,7 +9,11 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
+
+concurrency:
+  group: aijia-ios-version-sequence
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -19,21 +23,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set incremental app version
+      - name: Resolve next app version
         working-directory: iOS/AijiaDirect
-        env:
-          ACTIONS_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          # Run 9 produced the existing 1.0 build. Every later build adds 0.1.
-          version_index=$((ACTIONS_RUN_NUMBER + 1))
-          version_major=$((version_index / 10))
-          version_minor=$((version_index % 10))
-          short_version="${version_major}.${version_minor}"
-          build_version="${ACTIONS_RUN_NUMBER}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${short_version}" AijiaDirect/Info.plist
+          CURRENT_VERSION=$(curl -fsSL \
+            "https://raw.githubusercontent.com/${{ github.repository }}/main/.github/ios-version.txt" \
+            2>/dev/null | tr -d '[:space:]' || true)
+
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/.github/ios-version.txt")
+          fi
+
+          if [[ ! "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9])$ ]]; then
+            echo "Invalid current iOS version: $CURRENT_VERSION" >&2
+            exit 1
+          fi
+
+          version_major="${BASH_REMATCH[1]}"
+          version_minor="${BASH_REMATCH[2]}"
+          version_minor=$((10#$version_minor + 1))
+
+          if [ "$version_minor" -ge 10 ]; then
+            version_major=$((version_major + 1))
+            version_minor=0
+          fi
+
+          app_version="${version_major}.${version_minor}"
+          build_version=$((version_major * 10 + version_minor))
+          ipa_filename="AijiaDirect-v${app_version}.ipa"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${app_version}" AijiaDirect/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_version}" AijiaDirect/Info.plist
-          echo "Build version: ${short_version} (${build_version})" >> "$GITHUB_STEP_SUMMARY"
-          echo "Using version ${short_version}, build ${build_version}"
+
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
+          echo "BUILD_VERSION=$build_version" >> "$GITHUB_ENV"
+          echo "IPA_FILENAME=$ipa_filename" >> "$GITHUB_ENV"
+
+          echo "Current successful version: $CURRENT_VERSION"
+          echo "Building next version: $app_version ($build_version)"
+          echo "IPA filename: $ipa_filename"
+          echo "### iOS Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: **$app_version**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build: **$build_version**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IPA: **$ipa_filename**" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve reusable IJK framework artifact
         env:
@@ -123,7 +155,7 @@ jobs:
       - name: Build unsigned device archive
         working-directory: iOS/AijiaDirect
         run: |
-          rm -rf build Payload AijiaDirect-unsigned.ipa
+          rm -rf build Payload AijiaDirect-v*.ipa
           xcodebuild \
             -workspace AijiaDirect.xcworkspace \
             -scheme AijiaDirect \
@@ -136,11 +168,38 @@ jobs:
             archive
           mkdir Payload
           cp -R build/AijiaDirect.xcarchive/Products/Applications/AijiaDirect.app Payload/
-          ditto -c -k --sequesterRsrc --keepParent Payload AijiaDirect-unsigned.ipa
+          ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_FILENAME"
+          test -f "$IPA_FILENAME"
 
-      - name: Upload IPA
+      - name: Upload versioned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: AijiaDirect-unsigned-ipa
-          path: iOS/AijiaDirect/AijiaDirect-unsigned.ipa
+          name: AijiaDirect-v${{ env.APP_VERSION }}
+          path: iOS/AijiaDirect/${{ env.IPA_FILENAME }}
           retention-days: 7
+
+      - name: Record successful app version
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION_PATH=".github/ios-version.txt"
+          FILE_SHA=$(gh api \
+            "repos/${{ github.repository }}/contents/${VERSION_PATH}?ref=main" \
+            --jq '.sha // empty' 2>/dev/null || true)
+
+          if [ -z "$FILE_SHA" ]; then
+            echo "Version state is not on main yet; skipping persistence for this validation build."
+            exit 0
+          fi
+
+          ENCODED_VERSION=$(printf '%s\n' "$APP_VERSION" | base64 | tr -d '\n')
+
+          gh api --method PUT \
+            "repos/${{ github.repository }}/contents/${VERSION_PATH}" \
+            -f message="chore(ci): record iOS v${APP_VERSION} [skip ci]" \
+            -f content="$ENCODED_VERSION" \
+            -f sha="$FILE_SHA" \
+            -f branch="main" >/dev/null
+
+          echo "Recorded successful version: $APP_VERSION"
