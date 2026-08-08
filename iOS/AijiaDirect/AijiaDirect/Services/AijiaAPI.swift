@@ -652,11 +652,12 @@ final class AijiaAPI: AijiaAPIClient {
         if videoToken.isEmpty {
             try await loginVideo()
         }
+        let camera = try authenticatedCamera()
         let timestamp = currentTimestamp()
         var parameters = [
             "alarm_type": "",
             "category": "1",
-            "dev_sn": authenticatedCamera().macID,
+            "dev_sn": camera.macID,
             "end_time": String(endTime),
             "nonce": requestNonce(timestamp: timestamp),
             "start_time": String(startTime),
