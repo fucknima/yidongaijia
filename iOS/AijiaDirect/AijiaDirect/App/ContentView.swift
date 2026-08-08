@@ -628,6 +628,7 @@ private struct AboutView: View {
 private struct PlayerScreen: View {
     @ObservedObject var model: PlayerViewModel
     @State private var showingHistory = false
+    @State private var showingCloudReplay = false
     @State private var showingDiagnostics = false
     @State private var showingFullscreen = false
     @State private var showingAbout = false
@@ -699,7 +700,11 @@ private struct PlayerScreen: View {
                 VStack(alignment: .leading, spacing: PlayerPageLayout.sectionSpacing) {
                     // SwiftUI may replace this host during presentation, but
                     // the model keeps one persistent player view throughout.
-                    if model.streamURL != nil, !model.isReplay {
+                    // Cloud replay must be excluded: while a cloud clip plays,
+                    // streamURL holds the m3u8 and isReplay is false, so the
+                    // covered live page would otherwise mount a second surface
+                    // and steal the single player view (inline stays black).
+                    if model.streamURL != nil, !model.isReplay, !model.isCloudReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
@@ -781,29 +786,61 @@ private struct PlayerScreen: View {
                     if model.isAuthenticated {
                         PTZControlPanel(model: model)
 
-                        NavigationLink(
-                            destination: HistoryView(model: model),
-                            isActive: $showingHistory
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .font(.title3)
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 30)
-                                Text("内存卡回放")
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
+                        HStack(spacing: 12) {
+                            NavigationLink(
+                                destination: HistoryView(model: model),
+                                isActive: $showingHistory
+                            ) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.title3)
+                                        .foregroundStyle(AppTheme.accent)
+                                        .frame(width: 28)
+                                    Text("内存卡回放")
+                                        .font(.body.weight(.medium))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
+
+                            NavigationLink(
+                                destination: CloudReplayView(model: model),
+                                isActive: $showingCloudReplay
+                            ) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "cloud.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(AppTheme.accent)
+                                        .frame(width: 28)
+                                    Text("云回放")
+                                        .font(.body.weight(.medium))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .padding(16)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                                .fill(Color(.secondarySystemGroupedBackground))
-                        )
                     }
                 }
                 .padding(.horizontal, PlayerPageLayout.horizontalInset)
@@ -927,7 +964,7 @@ private struct PlayerSurface: View {
 
             VStack {
                 HStack {
-                    Text(model.isReplay ? model.networkSpeedText : "LIVE")
+                    Text((model.isReplay || model.isCloudReplay) ? model.networkSpeedText : "LIVE")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -1541,6 +1578,257 @@ private struct HistoryView: View {
         let duration = max(0, Int(recording.endDate.timeIntervalSince(recording.startDate)))
         return "\(duration / 60) 分 \(duration % 60) 秒"
     }
+}
+
+private struct CloudReplayView: View {
+    @ObservedObject var model: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedDay: Int64?
+    @State private var hasLoadedOnce = false
+    @State private var showingDiagnostics = false
+    @State private var showingFullscreen = false
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy 年 M 月 d 日"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    DiagnosticsLogger.shared.info("UI", "用户从云回放顶栏返回直播页")
+                    model.stopCloudReplay()
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("返回播放")
+
+                Spacer()
+                Text("云回放")
+                    .font(.headline)
+                Spacer()
+
+                Button {
+                    DiagnosticsLogger.shared.info("UI", "用户从云回放顶栏打开诊断日志")
+                    showingDiagnostics = true
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("诊断日志")
+            }
+            .padding(.horizontal, 8)
+            .frame(height: PlayerPageLayout.topBarHeight)
+
+            VStack(alignment: .leading, spacing: PlayerPageLayout.sectionSpacing) {
+                AppTheme.card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("选择日期")
+                            .font(.subheadline.weight(.semibold))
+                        cloudDayStrip
+                        if model.cloudDays.isEmpty && !model.isLoadingCloud {
+                            Text("最近 30 天没有云端录像")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if model.isCloudReplay, model.streamURL != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("正在回放")
+                            .font(.headline)
+                        PlayerSurface(model: model) {
+                            showingFullscreen = true
+                        }
+                        Button(role: .destructive) {
+                            DiagnosticsLogger.shared.info("UI", "用户点击停止云回放")
+                            model.stopCloudReplay()
+                        } label: {
+                            Label("停止回放", systemImage: "stop.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if model.isLoadingCloud {
+                    ProgressView("正在读取云录像…")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else if model.cloudClips.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "cloud")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        Text(selectedDay == nil ? "选择日期查看云端录像" : "这一天没有找到云录像")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("云端录像片段（\(model.cloudClips.count)）")
+                            .font(.headline)
+
+                        List {
+                            ForEach(model.cloudClips) { clip in
+                                Button {
+                                    DiagnosticsLogger.shared.info(
+                                        "UI",
+                                        "用户播放云录像片段 \(clip.startTime)-\(clip.endTime)"
+                                    )
+                                    model.playCloudClip(clip)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "play.fill")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(AppTheme.accent)
+                                            .frame(width: 36, height: 36)
+                                            .background(Circle().fill(AppTheme.softAccent))
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(cloudTimeRange(for: clip))
+                                                .font(.subheadline.monospacedDigit().weight(.semibold))
+                                            Text(cloudDurationText(for: clip))
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.vertical, 5)
+                                }
+                                .buttonStyle(.plain)
+                                .listRowBackground(AppTheme.cardBackground)
+                                .listRowSeparator(.hidden)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+                    }
+                }
+
+                StatusText(model: model)
+            }
+            .padding(.horizontal, PlayerPageLayout.horizontalInset)
+            .padding(.bottom, PlayerPageLayout.bottomInset)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .navigationBarHidden(true)
+        .onAppear {
+            DiagnosticsLogger.shared.info("UI", "显示云回放页面")
+            model.setHistoryVisible(true)
+            guard !hasLoadedOnce, model.isAuthenticated else { return }
+            hasLoadedOnce = true
+            model.loadCloudDays()
+        }
+        .onDisappear {
+            model.setHistoryVisible(false)
+        }
+        .sheet(isPresented: $showingDiagnostics) {
+            NavigationView {
+                DiagnosticsView(model: model)
+            }
+        }
+        .fullScreenCover(isPresented: $showingFullscreen, onDismiss: {
+            ScreenOrientation.restorePortrait()
+        }) {
+            FullscreenPlayerView(model: model)
+        }
+    }
+
+    private var cloudDayStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(recentDays, id: \.self) { day in
+                    dayCell(day)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var recentDays: [Date] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return (0..<30).compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
+    }
+
+    private func dayHasCloudRecordings(_ day: Date) -> Bool {
+        let epoch = Int64(day.timeIntervalSince1970)
+        return model.cloudDays.contains(epoch)
+    }
+
+    private func dayCell(_ day: Date) -> some View {
+        let hasRecordings = dayHasCloudRecordings(day)
+        let isSelected = model.cloudSelectedDay == Int64(day.timeIntervalSince1970)
+        let weekday = Self.weekdayFormatter.string(from: day)
+        let dayNumber = Self.dayNumberFormatter.string(from: day)
+
+        return Button {
+            DiagnosticsLogger.shared.info("UI", "用户选择云回放日期 \(Self.dayFormatter.string(from: day))")
+            model.loadCloudSegments(for: Int64(day.timeIntervalSince1970))
+        } label: {
+            VStack(spacing: 4) {
+                Text(weekday)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(dayNumber)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isSelected ? Color.white : (hasRecordings ? AppTheme.accent : Color.primary))
+                Circle()
+                    .fill(hasRecordings ? AppTheme.accent : Color.clear)
+                    .frame(width: 5, height: 5)
+            }
+            .frame(width: 44, height: 58)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? AppTheme.accent : (hasRecordings ? AppTheme.softAccent : Color(.secondarySystemGroupedBackground)))
+            )
+            .opacity(hasRecordings || isSelected ? 1 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Self.dayFormatter.string(from: day))
+    }
+
+    private func cloudTimeRange(for clip: AijiaCloudClip) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm:ss"
+        return "\(formatter.string(from: clip.startDate)) – \(formatter.string(from: clip.endDate))"
+    }
+
+    private func cloudDurationText(for clip: AijiaCloudClip) -> String {
+        let duration = max(0, Int((clip.endTime - clip.startTime) / 1000))
+        return "\(duration / 60) 分 \(duration % 60) 秒"
+    }
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "E"
+        return formatter
+    }()
+
+    private static let dayNumberFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "d"
+        return formatter
+    }()
 }
 
 private struct DiagnosticsView: View {
