@@ -698,7 +698,30 @@ final class AijiaAPI: AijiaAPIClient {
     /// a plain POST with every parameter in the query string (signed over all
     /// of them) and an empty body; the response carries a session UUID plus a
     /// pre-signed m3u8 URL, so no media signing is needed on our side.
+    /// Transient failures (empty body or record lookup misses) are retried
+    /// once with a fresh nonce.
     func createCloudPlayback(startTime: Int64, endTime: Int64) async throws -> AijiaCloudSession {
+        var lastError: Error = AijiaAPIError.invalidResponse
+        for attempt in 0..<2 {
+            do {
+                let session = try await createCloudPlaybackOnce(startTime: startTime, endTime: endTime)
+                if attempt > 0 {
+                    logger.info("CLOUD", "云回放会话重试成功 attempt=\(attempt + 1)")
+                }
+                return session
+            } catch {
+                lastError = error
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                    throw CancellationError()
+                }
+                logger.warning("CLOUD", "云回放会话创建失败 attempt=\(attempt + 1) error=\(error.localizedDescription)")
+                try? await Task.sleep(nanoseconds: 600_000_000)
+            }
+        }
+        throw lastError
+    }
+
+    private func createCloudPlaybackOnce(startTime: Int64, endTime: Int64) async throws -> AijiaCloudSession {
         let camera = try authenticatedCamera()
         let timestamp = currentTimestamp()
         var parameters = [

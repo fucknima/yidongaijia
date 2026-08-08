@@ -39,6 +39,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
     @Published private(set) var isLoadingCloud = false
     @Published private(set) var isCloudReplay = false
     @Published private(set) var cloudSelectedDay: Int64 = 0
+    @Published private(set) var cloudDayStartMS: Int64 = 0
+    @Published private(set) var cloudDayEndMS: Int64 = 0
     @Published private(set) var playerViewID = UUID()
     @Published private(set) var networkSpeedText = "-- KB/s"
     @Published private(set) var shouldPresentCameraSelection = false
@@ -1047,11 +1049,16 @@ final class PlayerViewModel: NSObject, ObservableObject {
                 guard let self = self,
                       self.api === client,
                       self.cloudSelectedDay == day else { return }
+                // The server aligns the window to the actual recorded footage;
+                // keep those bounds so short clip windows can be padded and
+                // clamped without overflowing into missing records.
+                self.cloudDayStartMS = session.startTime
+                self.cloudDayEndMS = session.endTime
                 self.cloudSegments = segments
                 self.cloudClips = clips
                 self.isLoadingCloud = false
                 self.status = clips.isEmpty ? "这一天没有云录像" : "找到 \(clips.count) 段云录像"
-                self.logger.info("CLOUD", "云录像分段解析成功 day=\(day) segments=\(segments.count) clips=\(clips.count)")
+                self.logger.info("CLOUD", "云录像分段解析成功 day=\(day) segments=\(segments.count) clips=\(clips.count) window=\(session.startTime)-\(session.endTime)")
             } catch {
                 guard let self = self,
                       self.api === client,
@@ -1091,9 +1098,16 @@ final class PlayerViewModel: NSObject, ObservableObject {
         let task = Task(priority: .userInitiated) { [weak self, client, clip, operationID] in
             do {
                 try Task.checkCancellation()
+                // The clip times are derived from truncated TS filenames and
+                // may not align to the server's segment grid. Pad by two
+                // seconds and clamp to the day's actual footage so the server
+                // always finds the record (otherwise it intermittently
+                // answers "record not exist").
+                let windowStart = max(self?.cloudDayStartMS ?? clip.startTime, clip.startTime - 2000)
+                let windowEnd = min(self?.cloudDayEndMS ?? clip.endTime, clip.endTime + 2000)
                 let session = try await client.createCloudPlayback(
-                    startTime: clip.startTime,
-                    endTime: clip.endTime
+                    startTime: windowStart,
+                    endTime: windowEnd
                 )
                 try Task.checkCancellation()
                 guard let self = self,
@@ -1797,6 +1811,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
         cloudSegments = []
         cloudClips = []
         cloudSelectedDay = 0
+        cloudDayStartMS = 0
+        cloudDayEndMS = 0
         isLoadingCloud = false
         isCloudReplay = false
         livePausedForCloud = false

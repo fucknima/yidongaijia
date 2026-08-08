@@ -700,7 +700,11 @@ private struct PlayerScreen: View {
                 VStack(alignment: .leading, spacing: PlayerPageLayout.sectionSpacing) {
                     // SwiftUI may replace this host during presentation, but
                     // the model keeps one persistent player view throughout.
-                    if model.streamURL != nil, !model.isReplay {
+                    // Cloud replay must be excluded: while a cloud clip plays,
+                    // streamURL holds the m3u8 and isReplay is false, so the
+                    // covered live page would otherwise mount a second surface
+                    // and steal the single player view (inline stays black).
+                    if model.streamURL != nil, !model.isReplay, !model.isCloudReplay {
                         PlayerSurface(model: model) {
                             showingFullscreen = true
                         }
