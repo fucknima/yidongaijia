@@ -137,6 +137,16 @@ struct AijiaCloudSegment: Identifiable, Equatable {
     var id: String { url.absoluteString }
 }
 
+/// A contiguous cloud recording window, merged from adjacent TS segments.
+struct AijiaCloudClip: Identifiable, Equatable {
+    let startTime: Int64
+    let endTime: Int64
+
+    var id: String { "\(startTime)-\(endTime)" }
+    var startDate: Date { Date(timeIntervalSince1970: TimeInterval(startTime) / 1000) }
+    var endDate: Date { Date(timeIntervalSince1970: TimeInterval(endTime) / 1000) }
+}
+
 enum AijiaAPIError: LocalizedError {
     case invalidResponse
     case httpStatus(Int)

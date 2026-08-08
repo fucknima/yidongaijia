@@ -33,6 +33,12 @@ final class PlayerViewModel: NSObject, ObservableObject {
     @Published private(set) var replayDurationSecond: Int64 = 0
     @Published private(set) var recordings: [AijiaRecording] = []
     @Published private(set) var isLoadingRecordings = false
+    @Published private(set) var cloudDays: [Int64] = []
+    @Published private(set) var cloudSegments: [AijiaCloudSegment] = []
+    @Published private(set) var cloudClips: [AijiaCloudClip] = []
+    @Published private(set) var isLoadingCloud = false
+    @Published private(set) var isCloudReplay = false
+    @Published private(set) var cloudSelectedDay: Int64 = 0
     @Published private(set) var playerViewID = UUID()
     @Published private(set) var networkSpeedText = "-- KB/s"
     @Published private(set) var shouldPresentCameraSelection = false
@@ -196,6 +202,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         finishReplayIfNeeded()
         isReplay = false
         resetReplayPlaybackState()
+        resetCloudReplayState()
         stopPlaybackOnly()
         let loginPassword = password
         let shouldRememberLogin = rememberLogin
@@ -416,6 +423,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         finishReplayIfNeeded()
         isReplay = false
         resetReplayPlaybackState()
+        resetCloudReplayState()
         stopPlaybackOnly()
         api = nil
         streamURL = nil
@@ -971,6 +979,163 @@ final class PlayerViewModel: NSObject, ObservableObject {
         playbackTask = task
     }
 
+    // MARK: - 云回放(云端录像)
+
+    /// Loads the days (epoch seconds, local midnight) that have cloud
+    /// recordings in the last month.
+    func loadCloudDays() {
+        guard let client = api, isAuthenticated else {
+            status = "请先连接摄像头"
+            hasError = true
+            return
+        }
+        guard !isLoadingCloud else { return }
+
+        isLoadingCloud = true
+        let now = Date()
+        let startTime = Int64(now.timeIntervalSince1970) - 30 * 86_400
+        let endTime = Int64(now.timeIntervalSince1970)
+        logger.info("CLOUD", "读取云录像日历 range=\(startTime)-\(endTime)")
+
+        let task = Task { [weak self, client] in
+            do {
+                let days = try await client.cloudCalendar(startTime: startTime, endTime: endTime)
+                guard let self = self, self.api === client else { return }
+                self.cloudDays = days
+                self.isLoadingCloud = false
+                self.status = days.isEmpty ? "云端没有录像" : "云端有录像的天数：\(days.count)"
+                self.logger.info("CLOUD", "云录像日历读取成功 days=\(days)")
+            } catch {
+                guard let self = self, self.api === client else { return }
+                self.isLoadingCloud = false
+                self.hasError = true
+                self.status = "读取云录像日历失败：\(error.localizedDescription)"
+                self.logger.error("CLOUD", "云录像日历读取失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
+    }
+
+    /// Opens a cloud session for the selected day and merges its TS segments
+    /// into contiguous clips.
+    func loadCloudSegments(for day: Int64) {
+        guard let client = api, isAuthenticated else {
+            status = "请先连接摄像头"
+            hasError = true
+            return
+        }
+        guard cloudSelectedDay != day || cloudSegments.isEmpty else { return }
+
+        cloudSelectedDay = day
+        cloudClips = []
+        cloudSegments = []
+        isLoadingCloud = true
+        hasError = false
+        let dayStartMS = day * 1000
+        let dayEndMS = dayStartMS + 86_399_999
+        logger.info("CLOUD", "读取云录像分段 day=\(day)")
+
+        let task = Task { [weak self, client, day] in
+            do {
+                let session = try await client.createCloudPlayback(
+                    startTime: dayStartMS,
+                    endTime: dayEndMS
+                )
+                let segments = try await client.cloudPlaylist(url: session.playlistURL)
+                let clips = Self.cloudClips(from: segments)
+                guard let self = self,
+                      self.api === client,
+                      self.cloudSelectedDay == day else { return }
+                self.cloudSegments = segments
+                self.cloudClips = clips
+                self.isLoadingCloud = false
+                self.status = clips.isEmpty ? "这一天没有云录像" : "找到 \(clips.count) 段云录像"
+                self.logger.info("CLOUD", "云录像分段解析成功 day=\(day) segments=\(segments.count) clips=\(clips.count)")
+            } catch {
+                guard let self = self,
+                      self.api === client,
+                      self.cloudSelectedDay == day else { return }
+                self.isLoadingCloud = false
+                self.hasError = true
+                self.status = "读取云录像失败：\(error.localizedDescription)"
+                self.logger.error("CLOUD", "云录像读取失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
+    }
+
+    /// Plays one cloud clip through the IJK player. A dedicated playback
+    /// session is opened for the clip window, so the returned m3u8 only
+    /// contains that clip's segments and no seeking is needed.
+    func playCloudClip(_ clip: AijiaCloudClip) {
+        guard let client = api, isAuthenticated else {
+            status = "请先连接摄像头"
+            hasError = true
+            return
+        }
+
+        let operationID = beginPlaybackOperation()
+        stopPlaybackOnly()
+        streamURL = nil
+        isReplay = false
+        isCloudReplay = true
+        isLoading = true
+        isPlaying = false
+        hasError = false
+        shouldPlay = true
+        status = "正在打开云回放…"
+        logger.info("CLOUD", "播放云录像 clip=\(clip.startTime)-\(clip.endTime)")
+
+        let task = Task(priority: .userInitiated) { [weak self, client, clip, operationID] in
+            do {
+                try Task.checkCancellation()
+                let session = try await client.createCloudPlayback(
+                    startTime: clip.startTime,
+                    endTime: clip.endTime
+                )
+                try Task.checkCancellation()
+                guard let self = self,
+                      self.isCurrentPlaybackOperation(operationID),
+                      self.api === client,
+                      self.isCloudReplay else { return }
+                self.streamURL = session.playlistURL
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = false
+                self.status = "正在播放云录像"
+                self.logger.info("CLOUD", "云回放打开成功 url=\(DiagnosticsLogger.redactedURL(session.playlistURL))")
+                self.preparePlayerIfPossible()
+            } catch is CancellationError {
+                self?.logger.debug("CLOUD", "打开云回放请求已取消")
+            } catch {
+                guard let self = self,
+                      self.isCurrentPlaybackOperation(operationID),
+                      self.api === client,
+                      self.isCloudReplay else { return }
+                self.isLoading = false
+                self.isPlaying = false
+                self.isCloudReplay = false
+                self.hasError = true
+                self.status = "打开云回放失败：\(error.localizedDescription)"
+                self.logger.error("CLOUD", "打开云回放失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
+    }
+
+    func stopCloudReplay() {
+        guard isCloudReplay else { return }
+        logger.info("CLOUD", "用户停止云回放")
+        _ = beginPlaybackOperation()
+        stopPlaybackOnly()
+        streamURL = nil
+        isCloudReplay = false
+        isLoading = false
+        isPlaying = false
+        hasError = false
+        status = "云回放已停止"
+    }
+
     func seekReplay(to position: Double) {
         guard isReplay, let client = api, isAuthenticated, let recording = replayRecording else {
             logger.warning("REPLAY", "拖动进度被忽略：当前没有可用的历史录像会话")
@@ -1161,8 +1326,21 @@ final class PlayerViewModel: NSObject, ObservableObject {
             logger.error("PLAYER", "IJK 播放器初始化失败（无法创建选项）")
             return
         }
-        options.setPlayerOptionIntValue(300, forKey: "network-caching")
-        options.setPlayerOptionIntValue(1, forKey: "infbuf")
+        // The CMCC media hosts (live/stream/playback) receive this user agent
+        // from the official player; keep the same identity for cloud HLS.
+        options.setFormatOptionValue(
+            "CMDS(git hash:123,branch:456,build time:Jun  8 2026 14:15:11)",
+            forKey: "user_agent"
+        )
+        if isCloudReplay {
+            // HLS cloud playback: give the playlist/segment fetches a bigger
+            // buffer and disable the infinite live buffering mode.
+            options.setPlayerOptionIntValue(2000, forKey: "network-caching")
+            options.setPlayerOptionIntValue(0, forKey: "infbuf")
+        } else {
+            options.setPlayerOptionIntValue(300, forKey: "network-caching")
+            options.setPlayerOptionIntValue(1, forKey: "infbuf")
+        }
         options.setPlayerOptionIntValue(1, forKey: "packet-buffering")
         options.setPlayerOptionIntValue(0, forKey: "flush_packets")
         options.setPlayerOptionIntValue(1000, forKey: "analyzemaxduration")
@@ -1568,6 +1746,52 @@ final class PlayerViewModel: NSObject, ObservableObject {
         replayDurationSecond = 0
     }
 
+    private func resetCloudReplayState() {
+        cloudDays = []
+        cloudSegments = []
+        cloudClips = []
+        cloudSelectedDay = 0
+        isLoadingCloud = false
+        isCloudReplay = false
+    }
+
+    /// Merges adjacent cloud TS segments into contiguous clips. A gap larger
+    /// than 15 seconds starts a new clip.
+    private static func cloudClips(from segments: [AijiaCloudSegment]) -> [AijiaCloudClip] {
+        var clips: [AijiaCloudClip] = []
+        var currentStart: Int64?
+        var currentEnd: Int64 = 0
+
+        for segment in segments {
+            guard let epoch = cloudSegmentStartTime(segment) else { continue }
+            let startMS = epoch * 1000
+            let endMS = startMS + Int64(segment.duration * 1000)
+
+            if let start = currentStart, startMS - currentEnd <= 15_000 {
+                currentEnd = max(currentEnd, endMS)
+            } else {
+                if let start = currentStart {
+                    clips.append(AijiaCloudClip(startTime: start, endTime: currentEnd))
+                }
+                currentStart = startMS
+                currentEnd = endMS
+            }
+        }
+        if let start = currentStart {
+            clips.append(AijiaCloudClip(startTime: start, endTime: currentEnd))
+        }
+        return clips
+    }
+
+    /// Extracts the segment start epoch (seconds) from its URL path:
+    /// https://playback01-.../playback/{macId}/{epoch}.ts
+    private static func cloudSegmentStartTime(_ segment: AijiaCloudSegment) -> Int64? {
+        guard let fileName = segment.url.pathComponents.last else { return nil }
+        let epochText = fileName.replacingOccurrences(of: ".ts", with: "")
+        guard let epoch = Int64(epochText) else { return nil }
+        return epoch
+    }
+
     private func cancelRecordingsQuery() {
         recordingsTask?.cancel()
         recordingsTask = nil
@@ -1648,9 +1872,17 @@ final class PlayerViewModel: NSObject, ObservableObject {
         if reason == IJKMPMovieFinishReason.playbackError.rawValue {
             isPlaying = false
             hasError = true
-            status = "播放器报告错误，正在重试…"
+            status = isCloudReplay ? "云回放播放错误" : "播放器报告错误，正在重试…"
             logger.error("PLAYER", "IJK 播放错误 info=\(userInfoText)")
-            scheduleRetryPlay()
+            if isCloudReplay {
+                isCloudReplay = false
+            } else {
+                scheduleRetryPlay()
+            }
+        } else if reason == IJKMPMovieFinishReason.playbackEnded.rawValue, isCloudReplay {
+            isPlaying = false
+            status = "云回放已结束"
+            logger.info("CLOUD", "云回放播放到结尾")
         }
     }
 
@@ -1658,7 +1890,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     /// official tryToReplayTimerAction behaviour. Bound to one retry so a
     /// persistent failure surfaces to the user instead of looping forever.
     private func scheduleRetryPlay() {
-        guard shouldPlay, !isReplay else { return }
+        guard shouldPlay, !isReplay, !isCloudReplay else { return }
         guard !reconnectInFlight else { return }
         reconnectInFlight = true
         logger.info("PLAYER", "安排播放自动重试")
