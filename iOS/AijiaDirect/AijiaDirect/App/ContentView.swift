@@ -807,12 +807,13 @@ private struct PlayerScreen: View {
                 }
                 .padding(.horizontal, PlayerPageLayout.horizontalInset)
                 .padding(.bottom, PlayerPageLayout.bottomInset)
-                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(
+                Color(.systemGroupedBackground),
+                ignoresSafeAreaEdges: [.top, .bottom]
+            )
             .navigationBarHidden(true)
         }
-        .navigationViewStyle(StackNavigationViewStyle())
         .sheet(isPresented: $showingDiagnostics) {
             NavigationView {
                 DiagnosticsView(model: model)
@@ -1474,9 +1475,11 @@ private struct HistoryView: View {
             }
             .padding(.horizontal, PlayerPageLayout.horizontalInset)
             .padding(.bottom, PlayerPageLayout.bottomInset)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(
+            Color(.systemGroupedBackground),
+            ignoresSafeAreaEdges: [.top, .bottom]
+        )
         .navigationBarHidden(true)
         .onAppear {
             DiagnosticsLogger.shared.info(
