@@ -189,6 +189,7 @@ private enum PlayerPageLayout {
     // particular, do not let either top bar grow from its contents.
     static let topBarHeight: CGFloat = 48
     static let sectionSpacing: CGFloat = 16
+    static let liveContentTopInset: CGFloat = sectionSpacing
     static let horizontalInset: CGFloat = 16
     static let bottomInset: CGFloat = 12
 }
@@ -806,6 +807,7 @@ private struct PlayerScreen: View {
                     }
                 }
                 .padding(.horizontal, PlayerPageLayout.horizontalInset)
+                .padding(.top, PlayerPageLayout.liveContentTopInset)
                 .padding(.bottom, PlayerPageLayout.bottomInset)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -841,7 +843,7 @@ private struct PlayerScreen: View {
         .onAppear {
             DiagnosticsLogger.shared.info(
                 "UI",
-                "直播页使用固定布局 topBarHeight=\(Int(PlayerPageLayout.topBarHeight)) sectionSpacing=\(Int(PlayerPageLayout.sectionSpacing))"
+                "直播页使用固定布局 topBarHeight=\(Int(PlayerPageLayout.topBarHeight)) contentTopInset=\(Int(PlayerPageLayout.liveContentTopInset)) sectionSpacing=\(Int(PlayerPageLayout.sectionSpacing))"
             )
             DiagnosticsLogger.shared.info("UI", "显示直播主页 camera=\(DiagnosticsLogger.maskIdentifier(model.selectedCameraID))")
         }
