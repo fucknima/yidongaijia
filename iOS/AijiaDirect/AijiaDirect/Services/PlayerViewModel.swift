@@ -1327,18 +1327,25 @@ final class PlayerViewModel: NSObject, ObservableObject {
             return
         }
         if isCloudReplay {
-            // HLS cloud playback: give the playlist/segment fetches a bigger
-            // buffer and disable the infinite live buffering mode.
-            options.setPlayerOptionIntValue(2000, forKey: "network-caching")
+            // HLS cloud playback needs demux-friendly settings: a bigger
+            // probe window (the playlist + first TS headers), a larger
+            // network buffer, and packet flushing across #EXT-X-DISCONTINUITY
+            // boundaries. The live FLV values below are intentionally kept
+            // untouched for the live stream.
+            options.setPlayerOptionIntValue(16 * 1024, forKey: "probesize")
+            options.setPlayerOptionIntValue(5000, forKey: "analyzemaxduration")
+            options.setPlayerOptionIntValue(8000, forKey: "network-caching")
             options.setPlayerOptionIntValue(0, forKey: "infbuf")
+            options.setPlayerOptionIntValue(1, forKey: "packet-buffering")
+            options.setPlayerOptionIntValue(1, forKey: "flush_packets")
         } else {
             options.setPlayerOptionIntValue(300, forKey: "network-caching")
             options.setPlayerOptionIntValue(1, forKey: "infbuf")
+            options.setPlayerOptionIntValue(1, forKey: "packet-buffering")
+            options.setPlayerOptionIntValue(0, forKey: "flush_packets")
+            options.setPlayerOptionIntValue(1000, forKey: "analyzemaxduration")
+            options.setPlayerOptionIntValue(1024, forKey: "probesize")
         }
-        options.setPlayerOptionIntValue(1, forKey: "packet-buffering")
-        options.setPlayerOptionIntValue(0, forKey: "flush_packets")
-        options.setPlayerOptionIntValue(1000, forKey: "analyzemaxduration")
-        options.setPlayerOptionIntValue(1024, forKey: "probesize")
         guard let player = IJKFFMoviePlayerController(contentURL: streamURL, with: options) else {
             status = "播放器初始化失败"
             hasError = true

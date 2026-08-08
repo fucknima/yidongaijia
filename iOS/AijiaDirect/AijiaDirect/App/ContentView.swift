@@ -952,7 +952,7 @@ private struct PlayerSurface: View {
 
             VStack {
                 HStack {
-                    Text(model.isReplay ? model.networkSpeedText : "LIVE")
+                    Text((model.isReplay || model.isCloudReplay) ? model.networkSpeedText : "LIVE")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
