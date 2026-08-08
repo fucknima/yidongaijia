@@ -782,53 +782,61 @@ private struct PlayerScreen: View {
                     if model.isAuthenticated {
                         PTZControlPanel(model: model)
 
-                        NavigationLink(
-                            destination: HistoryView(model: model),
-                            isActive: $showingHistory
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .font(.title3)
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 30)
-                                Text("内存卡回放")
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
+                        HStack(spacing: 12) {
+                            NavigationLink(
+                                destination: HistoryView(model: model),
+                                isActive: $showingHistory
+                            ) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.title3)
+                                        .foregroundStyle(AppTheme.accent)
+                                        .frame(width: 28)
+                                    Text("内存卡回放")
+                                        .font(.body.weight(.medium))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
-                        }
-                        .buttonStyle(.plain)
-                        .padding(16)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                                .fill(Color(.secondarySystemGroupedBackground))
-                        )
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
 
-                        NavigationLink(
-                            destination: CloudReplayView(model: model),
-                            isActive: $showingCloudReplay
-                        ) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "cloud.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 30)
-                                Text("云回放")
-                                    .font(.body.weight(.medium))
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.footnote.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
+                            NavigationLink(
+                                destination: CloudReplayView(model: model),
+                                isActive: $showingCloudReplay
+                            ) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "cloud.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(AppTheme.accent)
+                                        .frame(width: 28)
+                                    Text("云回放")
+                                        .font(.body.weight(.medium))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .padding(16)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                                .fill(Color(.secondarySystemGroupedBackground))
-                        )
                     }
                 }
                 .padding(.horizontal, PlayerPageLayout.horizontalInset)

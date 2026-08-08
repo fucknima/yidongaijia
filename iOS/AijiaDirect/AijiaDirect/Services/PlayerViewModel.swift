@@ -72,6 +72,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
     private var foregroundRefreshInFlight = false
     private var didEnterBackgroundWhilePlaying = false
     private var replayBackgroundedAt: Date?
+    private var livePausedForCloud = false
     private var didUserLogout = false
     private var didAutoConnect = false
     private var isHistoryVisible = false
@@ -1079,6 +1080,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         streamURL = nil
         isReplay = false
         isCloudReplay = true
+        livePausedForCloud = true
         isLoading = true
         isPlaying = false
         hasError = false
@@ -1124,16 +1126,59 @@ final class PlayerViewModel: NSObject, ObservableObject {
     }
 
     func stopCloudReplay() {
-        guard isCloudReplay else { return }
-        logger.info("CLOUD", "用户停止云回放")
-        _ = beginPlaybackOperation()
+        let client = api
+        let operationID = beginPlaybackOperation()
+        let resumeLive = livePausedForCloud
+        livePausedForCloud = false
+        logger.info("CLOUD", "用户停止云回放 resumeLive=\(resumeLive)")
         stopPlaybackOnly()
         streamURL = nil
         isCloudReplay = false
         isLoading = false
         isPlaying = false
         hasError = false
-        status = "云回放已停止"
+
+        guard resumeLive, shouldPlay, isAuthenticated, let client = client else {
+            status = "云回放已停止"
+            return
+        }
+
+        isLoading = true
+        status = "正在恢复实时画面…"
+        logger.info("PLAYER", "云回放结束，立即恢复实时流")
+
+        let task = Task(priority: .userInitiated) { [weak self, client, operationID] in
+            guard let self = self else { return }
+            guard self.isCurrentPlaybackOperation(operationID), self.shouldPlay else { return }
+
+            do {
+                let stream = try await client.openStream()
+                guard self.isCurrentPlaybackOperation(operationID),
+                      self.shouldPlay,
+                      self.api === client,
+                      !self.isCloudReplay else { return }
+                self.cameraName = stream.camera.name
+                self.streamURL = stream.url
+                self.isLoading = false
+                self.isPlaying = true
+                self.hasError = false
+                self.status = "已回到实时流，正在本机播放"
+                self.logger.info("PLAYER", "云回放后实时流恢复成功 url=\(DiagnosticsLogger.redactedURL(stream.url))")
+                self.preparePlayerIfPossible()
+                self.scheduleKeepAlive()
+            } catch {
+                guard self.isCurrentPlaybackOperation(operationID),
+                      self.shouldPlay,
+                      self.api === client,
+                      !self.isCloudReplay else { return }
+                self.isLoading = false
+                self.isPlaying = false
+                self.hasError = true
+                self.status = "恢复实时画面失败：\(error.localizedDescription)"
+                self.logger.error("PLAYER", "云回放后恢复实时流失败 error=\(error.localizedDescription)")
+            }
+        }
+        playbackTask = task
     }
 
     func seekReplay(to position: Double) {
@@ -1754,6 +1799,7 @@ final class PlayerViewModel: NSObject, ObservableObject {
         cloudSelectedDay = 0
         isLoadingCloud = false
         isCloudReplay = false
+        livePausedForCloud = false
     }
 
     /// Merges adjacent cloud TS segments into contiguous clips. A gap larger
