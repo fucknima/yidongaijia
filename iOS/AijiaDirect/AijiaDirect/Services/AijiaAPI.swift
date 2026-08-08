@@ -683,8 +683,13 @@ final class AijiaAPI: AijiaAPIClient {
             $0.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")
         }
         let payload = try await requestJSON(request)
-        let data = try requireData(in: payload, action: "读取云录像日历")
-        let days = (data as? [NSNumber])?.map(\.int64Value) ?? []
+        try requireSuccess(in: payload, action: "读取云录像日历")
+        // The server omits the data key entirely when the range has no
+        // recordings, so treat a missing key as an empty result.
+        var days: [Int64] = []
+        if let data = payload["data"], !(data is NSNull) {
+            days = (data as? [NSNumber])?.map(\.int64Value) ?? []
+        }
         logger.info("CLOUD", "云录像日历读取成功 days=\(days)")
         return days.sorted()
     }
@@ -709,7 +714,11 @@ final class AijiaAPI: AijiaAPIClient {
             path: Self.cloudPlaybackCreateURL.path
         )
 
-        var request = URLRequest(url: Self.cloudPlaybackCreateURL)
+        var components = URLComponents(url: Self.cloudPlaybackCreateURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = parameters.keys.sorted().map {
+            URLQueryItem(name: $0, value: parameters[$0])
+        }
+        var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         applyClientHeaders(to: &request, timestamp: timestamp)
         request.setValue(videoToken, forHTTPHeaderField: "AuthorizationToken")

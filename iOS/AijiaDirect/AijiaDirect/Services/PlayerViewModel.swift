@@ -993,8 +993,8 @@ final class PlayerViewModel: NSObject, ObservableObject {
 
         isLoadingCloud = true
         let now = Date()
-        let startTime = Int64(now.timeIntervalSince1970) - 30 * 86_400
-        let endTime = Int64(now.timeIntervalSince1970)
+        let startTime = Int64(now.timeIntervalSince1970 * 1000) - 30 * 86_400 * 1000
+        let endTime = Int64(now.timeIntervalSince1970 * 1000)
         logger.info("CLOUD", "读取云录像日历 range=\(startTime)-\(endTime)")
 
         let task = Task { [weak self, client] in
@@ -1326,12 +1326,6 @@ final class PlayerViewModel: NSObject, ObservableObject {
             logger.error("PLAYER", "IJK 播放器初始化失败（无法创建选项）")
             return
         }
-        // The CMCC media hosts (live/stream/playback) receive this user agent
-        // from the official player; keep the same identity for cloud HLS.
-        options.setFormatOptionValue(
-            "CMDS(git hash:123,branch:456,build time:Jun  8 2026 14:15:11)",
-            forKey: "user_agent"
-        )
         if isCloudReplay {
             // HLS cloud playback: give the playlist/segment fetches a bigger
             // buffer and disable the infinite live buffering mode.
