@@ -28,12 +28,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT_VERSION=$(gh api \
-            -H "Accept: application/vnd.github.raw+json" \
+          ENCODED_MAIN_VERSION=$(gh api \
             "repos/${{ github.repository }}/contents/.github/ios-version.txt?ref=main" \
-            2>/dev/null | tr -d '[:space:]' || true)
+            --jq '.content // empty' 2>/dev/null || true)
 
-          if [ -z "$CURRENT_VERSION" ]; then
+          if [ -n "$ENCODED_MAIN_VERSION" ]; then
+            CURRENT_VERSION=$(printf '%s' "$ENCODED_MAIN_VERSION" | tr -d '\n' | base64 -D | tr -d '[:space:]')
+          else
             CURRENT_VERSION=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/.github/ios-version.txt")
           fi
 
@@ -189,7 +190,7 @@ jobs:
           VERSION_PATH=".github/ios-version.txt"
           FILE_SHA=$(gh api \
             "repos/${{ github.repository }}/contents/${VERSION_PATH}?ref=main" \
-            --jq '.sha' 2>/dev/null || true)
+            --jq '.sha // empty' 2>/dev/null || true)
 
           if [ -z "$FILE_SHA" ]; then
             echo "Version state is not on main yet; skipping persistence for this validation build."
