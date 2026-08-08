@@ -16,6 +16,10 @@ struct ContentView: View {
                 PlayerScreen(model: model)
             }
         }
+        // Paint behind the root navigation container as well as its content.
+        // A background attached only inside NavigationView is clipped at the
+        // safe-area boundary and leaves white bands at the top and bottom.
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .tint(theme.accent.color)
         .preferredColorScheme(theme.appearance.colorScheme)
         .onAppear {
@@ -182,6 +186,15 @@ private enum AppTheme {
                     .fill(cardBackground)
             )
     }
+}
+
+private enum PlayerPageLayout {
+    // Keep live and replay pages on one deterministic vertical rhythm.  In
+    // particular, do not let either top bar grow from its contents.
+    static let topBarHeight: CGFloat = 48
+    static let sectionSpacing: CGFloat = 16
+    static let horizontalInset: CGFloat = 16
+    static let bottomInset: CGFloat = 0
 }
 
 private struct AppMark: View {
@@ -683,10 +696,10 @@ private struct PlayerScreen: View {
                     }
                     .accessibilityLabel("更多操作")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, PlayerPageLayout.horizontalInset)
+                .frame(height: PlayerPageLayout.topBarHeight)
 
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: PlayerPageLayout.sectionSpacing) {
                     // SwiftUI may replace this host during presentation, but
                     // the model keeps one persistent player view throughout.
                     if model.streamURL != nil, !model.isReplay {
@@ -796,12 +809,14 @@ private struct PlayerScreen: View {
                         )
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.horizontal, PlayerPageLayout.horizontalInset)
+                .padding(.bottom, PlayerPageLayout.bottomInset)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationBarHidden(true)
         }
+        .navigationViewStyle(StackNavigationViewStyle())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .sheet(isPresented: $showingDiagnostics) {
             NavigationView {
                 DiagnosticsView(model: model)
@@ -828,6 +843,10 @@ private struct PlayerScreen: View {
             FullscreenPlayerView(model: model)
         }
         .onAppear {
+            DiagnosticsLogger.shared.info(
+                "UI",
+                "直播页使用固定无留白布局 topBarHeight=\(Int(PlayerPageLayout.topBarHeight)) sectionSpacing=\(Int(PlayerPageLayout.sectionSpacing)) bottomInset=\(Int(PlayerPageLayout.bottomInset))"
+            )
             DiagnosticsLogger.shared.info("UI", "显示直播主页 camera=\(DiagnosticsLogger.maskIdentifier(model.selectedCameraID))")
         }
     }
@@ -1331,9 +1350,9 @@ private struct HistoryView: View {
                 .accessibilityLabel("诊断日志")
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .frame(height: PlayerPageLayout.topBarHeight)
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: PlayerPageLayout.sectionSpacing) {
                 AppTheme.card {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("选择日期")
@@ -1457,12 +1476,16 @@ private struct HistoryView: View {
 
                 StatusText(model: model)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, PlayerPageLayout.horizontalInset)
+            .padding(.bottom, PlayerPageLayout.bottomInset)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationBarHidden(true)
         .onAppear {
+            DiagnosticsLogger.shared.info(
+                "UI",
+                "回放页使用固定无留白布局 topBarHeight=\(Int(PlayerPageLayout.topBarHeight)) sectionSpacing=\(Int(PlayerPageLayout.sectionSpacing)) bottomInset=\(Int(PlayerPageLayout.bottomInset))"
+            )
             DiagnosticsLogger.shared.info("UI", "显示内存卡回放页面")
             model.setHistoryVisible(true)
             guard !hasLoadedOnce, model.isAuthenticated else { return }
